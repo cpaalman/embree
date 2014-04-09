@@ -114,6 +114,8 @@ IF (TARGET_AVX)
   bvh4hair/bvh4hair_builder2.cpp       # FIXME: should be in SSE2 section
   bvh4hair/bvh4hair_statistics.cpp    # FIXME: should be in SSE2 section
 
+  bvh4/bvh4_builder_hair.cpp       # FIXME: should be in SSE2 section
+
    geometry/triangle8.cpp
    geometry/ispc_wrapper_avx.cpp
 
@@ -126,6 +128,7 @@ IF (TARGET_AVX)
    bvh4/bvh4_intersector4_hybrid.cpp
    bvh4/bvh4_intersector8_chunk.cpp
    bvh4/bvh4_intersector8_hybrid.cpp
+   bvh4/bvh4_intersector1_full.cpp
 
    bvh4i/bvh4i_intersector1.cpp   
    bvh4i/bvh4i_intersector1_scalar.cpp   
@@ -162,16 +165,17 @@ IF (TARGET_AVX2)
     geometry/instance_intersector4.cpp
     geometry/instance_intersector8.cpp
 		
-		geometry/ispc_wrapper_avx.cpp
+    geometry/ispc_wrapper_avx.cpp
 		
     bvh4/bvh4_intersector1.cpp
     bvh4/bvh4_intersector4_chunk.cpp
     bvh4/bvh4_intersector4_hybrid.cpp
     bvh4/bvh4_intersector8_chunk.cpp
     bvh4/bvh4_intersector8_hybrid.cpp
+    bvh4/bvh4_intersector1_full.cpp
+
     bvh4i/bvh4i_intersector8_chunk_avx2.cpp  
     bvh4i/bvh4i_intersector8_hybrid.cpp
-
     bvh4i/bvh4i_intersector1.cpp   
     bvh4i/bvh4i_intersector1_scalar.cpp   
     bvh4i/bvh4i_intersector4_chunk.cpp   

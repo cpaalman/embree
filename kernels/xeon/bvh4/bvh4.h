@@ -71,7 +71,10 @@ namespace embree
     static const size_t maxLeafBlocks = 15;
 
     /*! Cost of one traversal step. */
-    static const int travCost = 1;
+    static const int travCost = 1; // FIXME: remove
+    static const int travCostAligned = 1;
+    static const int travCostUnaligned = 3;
+    static const int intCost = 6;
 
     /*! Reference to different node types or primitive list types */
     struct NodeRef
@@ -169,6 +172,8 @@ namespace embree
     /*! Uncompressed node with axis aligned bounds */
     struct UANode : public Node
     {
+      enum { stride = sizeof(ssef) };
+
       /*! Clears the node. */
       __forceinline void clear() {
         lower_x = lower_y = lower_z = pos_inf; 
@@ -308,6 +313,8 @@ namespace embree
     /*! Compressed node with axis aligned bounds */
     struct CANode : public Node
     {
+      enum { stride = 4 };
+
       /*! Clears the node. */
       __forceinline void clear() 
       {
@@ -556,7 +563,8 @@ namespace embree
     ~BVH4 ();
 
     /*! BVH4 instantiations */
-    static Accel* BVH4Bezier1i(Scene* scene);
+    static Accel* BVH4Bezier1   (Scene* scene);
+    static Accel* BVH4Bezier1i  (Scene* scene);
     static Accel* BVH4Triangle1(Scene* scene);
     static Accel* BVH4Triangle4(Scene* scene);
     static Accel* BVH4Triangle8(Scene* scene);

@@ -130,10 +130,11 @@ namespace embree
         
 #if defined(__TARGET_AVX__)
         // FIXME:
-        if      (g_hair_accel == "bvh4.bezier1i"    ) accels.add(BVH4::BVH4Bezier1i(this));
+        if      (g_hair_accel == "bvh4.bezier1"     ) accels.add(BVH4::BVH4Bezier1(this));
+        else if (g_hair_accel == "bvh4.bezier1i"    ) accels.add(BVH4::BVH4Bezier1i(this));
         else if (g_hair_accel == "bvh4hair.bezier1" ) accels.add(BVH4Hair::BVH4HairBezier1(this));
         else if (g_hair_accel == "bvh4hair.bezier1i") accels.add(BVH4Hair::BVH4HairBezier1i(this));
-        else accels.add(BVH4Hair::BVH4HairBezier1i(this));
+        else accels.add(BVH4::BVH4Bezier1i(this));
 #endif
       } 
       else 
