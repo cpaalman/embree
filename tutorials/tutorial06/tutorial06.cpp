@@ -17,6 +17,7 @@
 #include "tutorial/tutorial.h"
 #include "tutorial/obj_loader.h"
 #include "sys/taskscheduler.h"
+#include "image/image.h"
 
 namespace embree
 {
@@ -31,6 +32,10 @@ namespace embree
   static size_t g_height = 512;
   static bool g_fullscreen = false;
   static size_t g_numThreads = 0;
+
+  static FileName outFilename = "";
+  static int g_numFrames = 1;
+  static int g_skipFrames = 0;
 
   /* scene */
   OBJScene g_obj_scene;
@@ -52,6 +57,17 @@ namespace embree
       /* load OBJ model*/
       else if (tag == "-i") {
         filename = path + cin->getFileName();
+      }
+
+      /* output filename */
+      else if (tag == "-o") {
+        outFilename = cin->getFileName();
+      }
+
+      /* number of frames to render in benchmark mode */
+      else if (tag == "-frames") {
+        g_skipFrames = cin->getInt();
+        g_numFrames  = cin->getInt();
       }
 
       /* parse camera parameters */
@@ -88,6 +104,39 @@ namespace embree
     }
   }
 
+  void renderToFile(const FileName& fileName)
+  {
+    resize(g_width,g_height);
+    AffineSpace3fa pixel2world = g_camera.pixel2world(g_width,g_height);
+
+    for (size_t i=0; i<g_skipFrames; i++) 
+      render(0.0f,
+             pixel2world.l.vx,
+             pixel2world.l.vy,
+             pixel2world.l.vz,
+             pixel2world.p);
+
+    double dt = 0.0f;
+    for (size_t i=0; i<g_numFrames; i++) 
+    {
+      std::cout << "frame [" << i << "/" << g_numFrames << "]" << std::endl;
+      double t0 = getSeconds();
+      render(0.0f,
+             pixel2world.l.vx,
+             pixel2world.l.vy,
+             pixel2world.l.vz,
+             pixel2world.p);
+      dt += getSeconds()-t0;
+    }
+    if (g_numFrames > 1) 
+      std::cout << "BENCHMARK_RENDER " << double(g_numFrames)/dt << std::endl;
+    
+    void* ptr = map();
+    Ref<Image> image = new Image4c(g_width, g_height, (Col4c*)ptr);
+    storeImage(image, fileName);
+    unmap();
+  }
+
   /* main function in embree namespace */
   int main(int argc, char** argv) 
   {
@@ -112,6 +161,12 @@ namespace embree
     
     /* send model */
     set_scene(&g_obj_scene);
+
+    /* render to disk */
+    if (outFilename.str() != "") {
+      renderToFile(outFilename);
+      return 0;
+    } 
 
     /* initialize GLUT */
     initGlut(tutorialName,g_width,g_height,g_fullscreen,true);
