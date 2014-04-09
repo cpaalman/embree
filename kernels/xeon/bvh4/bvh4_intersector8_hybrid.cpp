@@ -100,9 +100,9 @@ namespace embree
         {
 
           /* test if this is a leaf node */
-          if (unlikely(curNode.isLeaf()))
-            break;
-
+          //if (unlikely(curNode.isLeaf())) break;
+          if (unlikely(!curNode.isUANode())) break;
+          
           STAT3(normal.trav_nodes,1,popcnt(ray_tfar > curDist),8);
           const BVH4::UANode* __restrict__ const node = curNode.getUANode();
           
@@ -274,8 +274,8 @@ namespace embree
         {
 
           /* test if this is a leaf node */
-          if (unlikely(curNode.isLeaf()))
-            break;
+          //if (unlikely(curNode.isLeaf())) break;
+          if (unlikely(!curNode.isUANode())) break;
           
           STAT3(shadow.trav_nodes,1,popcnt(ray_tfar > curDist),8);
 

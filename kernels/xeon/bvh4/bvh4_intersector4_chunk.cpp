@@ -72,8 +72,8 @@ namespace embree
         while (1)
         {
           /* test if this is a leaf node */
-          if (unlikely(curNode.isLeaf()))
-            break;
+          //if (unlikely(curNode.isLeaf())) break;
+          if (unlikely(!curNode.isUANode())) break;
           
           const sseb valid_node = ray_tfar > curDist;
           STAT3(normal.trav_nodes,1,popcnt(valid_node),4);
@@ -206,8 +206,8 @@ namespace embree
         while (1)
         {
           /* test if this is a leaf node */
-          if (unlikely(curNode.isLeaf()))
-            break;
+          //if (unlikely(curNode.isLeaf())) break;
+          if (unlikely(!curNode.isUANode())) break;
           
           const sseb valid_node = ray_tfar > curDist;
           STAT3(shadow.trav_nodes,1,popcnt(valid_node),4);
