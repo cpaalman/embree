@@ -43,24 +43,24 @@ namespace embree
 
     /*! some pointer decoration masks */
     static const size_t deco_mask    = 0xF00000000000000FLL;  //!< these bits are used to decorate the pointer
-    static const size_t barrier_mask = 0x8000000000000000LL;  //!< barrier bit to mark nodes during build
-    static const size_t type_mask    = 0x7000000000000000LL;  //!< node and leaf type bits
-    static const size_t items_mask   = 0x000000000000000FLL;  //!< number of items inside a leaf
+    static const size_t barrier_mask = 0x0000000000000008LL;  //!< barrier bit to mark nodes during build
+    static const size_t type_mask    = 0x0000000000000007LL;  //!< node and leaf type bits
+    static const size_t items_mask   = 0xF000000000000000LL;  //!< number of items inside a leaf
     static const size_t alignment    = 0x0000000000000010LL;  //!< required pointer alignment
 
     /*! node types */
-    static const size_t tyUA = 0x0000000000000000LL;  //!< uncompressed axis aligned node
-    static const size_t tyCA = 0x1000000000000000LL;  //!< compressed axis aligned node
-    static const size_t tyUU = 0x2000000000000000LL;  //!< uncompressed unaligned node
-    static const size_t tyCU = 0x3000000000000000LL;  //!< compressed unaligned node
-    static const size_t tyL0 = 0x4000000000000000LL;  //!< first leaf node type
+    static const size_t tyUA = 0;  //!< uncompressed axis aligned node
+    static const size_t tyCA = 1;  //!< compressed axis aligned node
+    static const size_t tyUU = 2;  //!< uncompressed unaligned node
+    static const size_t tyCU = 3;  //!< compressed unaligned node
+    static const size_t tyL0 = 4;  //!< first leaf node type
     static const size_t maxLeafTypes = 4;             //!< maximal number of leaf types
 
     /*! Empty node */
-    static const size_t emptyNode = 0x4000000000000000LL;
+    static const size_t emptyNode = 0x0000000000000004LL;
 
     /*! Invalid node, used as marker in traversal */
-    static const size_t invalidNode = 0x4FFFFFFFFFFFFFF0LL;
+    static const size_t invalidNode = 0x0FFFFFFFFFFFFFF4LL;
       
     /*! Maximal depth of the BVH. */
     static const size_t maxBuildDepth = 32;
@@ -68,7 +68,7 @@ namespace embree
     static const size_t maxDepth = maxBuildDepthLeaf+maxBuildDepthLeaf+maxBuildDepth;
     
     /*! Maximal number of primitive blocks in a leaf. */
-    static const size_t maxLeafBlocks = items_mask;
+    static const size_t maxLeafBlocks = 15;
 
     /*! Cost of one traversal step. */
     static const int travCost = 1;
@@ -113,8 +113,8 @@ namespace embree
       __forceinline bool isCUNode() const { return (ptr & type_mask) == tyCU; }
 
       /*! returns node pointer */
-      __forceinline       Node* getNode()       { assert(isNode()); return (      Node*)(ptr & ~type_mask); }
-      __forceinline const Node* getNode() const { assert(isNode()); return (const Node*)(ptr & ~type_mask); }
+      __forceinline       Node* getNode()       { assert(isNode()); return (      Node*)(ptr & ~deco_mask); }
+      __forceinline const Node* getNode() const { assert(isNode()); return (const Node*)(ptr & ~deco_mask); }
 
       /*! returns uncompressed axis aligned node pointer */
       __forceinline       UANode* getUANode()       { assert(isUANode()); return (      UANode*)ptr; }
@@ -135,9 +135,9 @@ namespace embree
       /*! returns leaf pointer */
       __forceinline char* getLeaf(size_t& num, size_t& type) const {
         assert(isLeaf());
-        num  = ptr & (size_t)items_mask;
+        num  = ptr >> 60;
         type = (ptr & type_mask) - tyL0;
-        return (char*)(ptr & ~(size_t)deco_mask);
+        return (char*)(ptr & ~deco_mask);
       }
 
     private:
@@ -624,7 +624,7 @@ namespace embree
     __forceinline NodeRef encodeLeaf(char* tri, size_t num, size_t type) {
       assert(((size_t)tri & deco_mask) == 0); 
       assert(type < maxLeafTypes);
-      return NodeRef((size_t)tri | (tyL0 + type) | min(num,maxLeafBlocks));
+      return NodeRef((size_t)tri | (tyL0 + type) | (min(num,maxLeafBlocks) << 60));
     }
 
   public:

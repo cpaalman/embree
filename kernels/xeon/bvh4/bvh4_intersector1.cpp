@@ -91,7 +91,8 @@ namespace embree
         while (true)
         {
           /*! stop if we found a leaf */
-          if (unlikely(cur.isLeaf())) break;
+          //if (unlikely(cur.isLeaf())) break;
+          if (unlikely(!cur.isUANode())) break;
           STAT3(normal.trav_nodes,1,1,1);
           
           /*! single ray intersection with 4 boxes */
@@ -240,7 +241,8 @@ namespace embree
         while (true)
         {
           /*! stop if we found a leaf */
-          if (unlikely(cur.isLeaf())) break;
+          //if (unlikely(cur.isLeaf())) break;
+          if (unlikely(!cur.isUANode())) break;
           STAT3(shadow.trav_nodes,1,1,1);
           
           /*! single ray intersection with 4 boxes */
