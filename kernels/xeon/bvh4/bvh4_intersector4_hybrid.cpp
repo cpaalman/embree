@@ -71,7 +71,7 @@ namespace embree
           STAT3(normal.trav_nodes,1,1,1);
           
           /*! single ray intersection with 4 boxes */
-          const Node* node = cur.node();
+          const BVH4::UANode* node = cur.getUANode();
           const size_t farX  = nearX ^ 16, farY  = nearY ^ 16, farZ  = nearZ ^ 16;
 #if defined (__AVX2__)
           const ssef tNearX = msub(load4f((const char*)node+nearX), rdir.x, org_rdir.x);
@@ -154,7 +154,7 @@ namespace embree
         
         /*! this is a leaf node */
         STAT3(normal.trav_leaves,1,1,1);
-        size_t num; Primitive* prim = (Primitive*) cur.leaf(num);
+        size_t num, ty; Primitive* prim = (Primitive*) cur.getLeaf(num,ty);
         PrimitiveIntersector4::intersect(ray,k,prim,num,bvh->geometry);
         rayFar = ray.tfar[k];
       }
@@ -229,7 +229,7 @@ namespace embree
           
           const sseb valid_node = ray_tfar > curDist;
           STAT3(normal.trav_nodes,1,popcnt(valid_node),4);
-          const Node* __restrict__ const node = curNode.node();
+          const BVH4::UANode* __restrict__ const node = curNode.getUANode();
           
           /* pop of next node */
           assert(sptr_node > stack_node);
@@ -309,7 +309,7 @@ namespace embree
         /* intersect leaf */
         const sseb valid_leaf = ray_tfar > curDist;
         STAT3(normal.trav_leaves,1,popcnt(valid_leaf),4);
-        size_t items; const Primitive* prim = (Primitive*) curNode.leaf(items);
+        size_t items,ty; const Primitive* prim = (Primitive*) curNode.getLeaf(items,ty);
         PrimitiveIntersector4::intersect(valid_leaf,ray,prim,items,bvh->geometry);
         ray_tfar = select(valid_leaf,ray.tfar,ray_tfar);
       }
@@ -354,7 +354,7 @@ namespace embree
           STAT3(shadow.trav_nodes,1,1,1);
           
           /*! single ray intersection with 4 boxes */
-          const Node* node = cur.node();
+          const BVH4::UANode* node = cur.getUANode();
           const size_t farX  = nearX ^ 16, farY  = nearY ^ 16, farZ  = nearZ ^ 16;
 #if defined (__AVX2__)
           const ssef tNearX = msub(load4f((const char*)node+nearX), rdir.x, org_rdir.x);
@@ -427,7 +427,7 @@ namespace embree
         
         /*! this is a leaf node */
         STAT3(shadow.trav_leaves,1,1,1);
-        size_t num; Primitive* prim = (Primitive*) cur.leaf(num);
+        size_t num,ty; Primitive* prim = (Primitive*) cur.getLeaf(num,ty);
         if (PrimitiveIntersector4::occluded(ray,k,prim,num,bvh->geometry)) {
           ray.geomID[k] = 0;
           return true;
@@ -508,7 +508,7 @@ namespace embree
           
           const sseb valid_node = ray_tfar > curDist;
           STAT3(shadow.trav_nodes,1,popcnt(valid_node),4);
-          const Node* __restrict__ const node = curNode.node();
+          const BVH4::UANode* __restrict__ const node = curNode.getUANode();
           
           /* pop of next node */
           assert(sptr_node > stack_node);
@@ -587,7 +587,7 @@ namespace embree
         /* intersect leaf */
         const sseb valid_leaf = ray_tfar > curDist;
         STAT3(shadow.trav_leaves,1,popcnt(valid_leaf),4);
-        size_t items; const Primitive* prim = (Primitive*) curNode.leaf(items);
+        size_t items,ty; const Primitive* prim = (Primitive*) curNode.getLeaf(items,ty);
         terminated |= PrimitiveIntersector4::occluded(!terminated,ray,prim,items,bvh->geometry);
         if (all(terminated)) break;
         ray_tfar = select(terminated,ssef(neg_inf),ray_tfar);

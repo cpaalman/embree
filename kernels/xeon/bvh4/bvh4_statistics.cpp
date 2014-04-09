@@ -83,7 +83,7 @@ namespace embree
       numNodes++;
       depth = 0;
       size_t cdepth = 0;
-      Node* n = node.node();
+      BVH4::UANode* n = node.getUANode(); // FIXME: properly handle node types
       bvhSAH += A*BVH4::travCost;
       for (size_t i=0; i<BVH4::N; i++) {
         statistics(n->child(i),n->bounds(i),cdepth); 
@@ -104,7 +104,7 @@ namespace embree
     else
     {
       depth = 0;
-      size_t num; const char* tri = node.leaf(num);
+      size_t num,ty; const char* tri = node.getLeaf(num,ty); // FIXME: properly handle leaf types
       if (!num) return;
       
       numLeaves++;

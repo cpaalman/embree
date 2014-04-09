@@ -75,7 +75,7 @@ namespace embree
           
           const avxb valid_node = ray_tfar > curDist;
           STAT3(normal.trav_nodes,1,popcnt(valid_node),8);
-          const Node* __restrict__ const node = curNode.node();
+          const BVH4::UANode* __restrict__ const node = curNode.getUANode();
           
           /* pop of next node */
           assert(sptr_node > stack_node);
@@ -149,7 +149,7 @@ namespace embree
         /* intersect leaf */
         const avxb valid_leaf = ray_tfar > curDist;
         STAT3(normal.trav_leaves,1,popcnt(valid_leaf),8);
-        size_t items; const Primitive* prim = (Primitive*) curNode.leaf(items);
+        size_t items,ty; const Primitive* prim = (Primitive*) curNode.getLeaf(items,ty);
         PrimitiveIntersector8::intersect(valid_leaf,ray,prim,items,bvh->geometry);
         ray_tfar = select(valid_leaf,ray.tfar,ray_tfar);
       }
@@ -204,7 +204,7 @@ namespace embree
           
           const avxb valid_node = ray_tfar > curDist;
           STAT3(shadow.trav_nodes,1,popcnt(valid_node),8);
-          const Node* __restrict__ const node = curNode.node();
+          const BVH4::UANode* __restrict__ const node = curNode.getUANode();
           
           /* pop of next node */
           assert(sptr_node > stack_node);
@@ -278,7 +278,7 @@ namespace embree
         /* intersect leaf */
         const avxb valid_leaf = ray_tfar > curDist;
         STAT3(shadow.trav_leaves,1,popcnt(valid_leaf),8);
-        size_t items; const Primitive* prim = (Primitive*) curNode.leaf(items);
+        size_t items,ty; const Primitive* prim = (Primitive*) curNode.getLeaf(items,ty);
         terminated |= valid_leaf & PrimitiveIntersector8::occluded(valid_leaf,ray,prim,items,bvh->geometry);
         if (all(terminated)) break;
         ray_tfar = select(terminated,neg_inf,ray_tfar);

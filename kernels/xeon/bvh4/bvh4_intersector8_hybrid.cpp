@@ -21,7 +21,6 @@
 #include "geometry/triangle4v_intersector8_pluecker.h"
 
 #define SWITCH_THRESHOLD 5
-
 #define SWITCH_DURING_DOWN_TRAVERSAL 1
 
 namespace embree
@@ -104,10 +103,8 @@ namespace embree
           if (unlikely(curNode.isLeaf()))
             break;
 
-
           STAT3(normal.trav_nodes,1,popcnt(ray_tfar > curDist),8);
-
-          const Node* __restrict__ const node = curNode.node();
+          const BVH4::UANode* __restrict__ const node = curNode.getUANode();
           
           /* pop of next node */
           assert(sptr_node > stack_node);
@@ -195,7 +192,7 @@ namespace embree
         const avxb valid_leaf = ray_tfar > curDist;
 
         STAT3(normal.trav_leaves,1,popcnt(valid_leaf),8);
-        size_t items; const Primitive* prim = (Primitive*) curNode.leaf(items);
+        size_t items,ty; const Primitive* prim = (Primitive*) curNode.getLeaf(items,ty);
         PrimitiveIntersector8::intersect(valid_leaf,ray,prim,items,bvh->geometry);
         ray_tfar = select(valid_leaf,ray.tfar,ray_tfar);
       }
@@ -282,7 +279,7 @@ namespace embree
           
           STAT3(shadow.trav_nodes,1,popcnt(ray_tfar > curDist),8);
 
-          const Node* __restrict__ const node = curNode.node();
+          const BVH4::UANode* __restrict__ const node = curNode.getUANode();
           
           /* pop of next node */
           assert(sptr_node > stack_node);
@@ -372,7 +369,7 @@ namespace embree
         const avxb valid_leaf = ray_tfar > curDist;
 
         STAT3(shadow.trav_leaves,1,popcnt(valid_leaf),8);
-        size_t items; const Primitive* prim = (Primitive*) curNode.leaf(items);
+        size_t items,ty; const Primitive* prim = (Primitive*) curNode.getLeaf(items,ty);
         terminated |= PrimitiveIntersector8::occluded(!terminated,ray,prim,items,bvh->geometry);
         if (all(terminated)) break;
         ray_tfar = select(terminated,avxf(neg_inf),ray_tfar);

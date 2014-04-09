@@ -336,7 +336,7 @@ namespace embree
       
       /* allocate leaf node */
       Triangle1* accel = (Triangle1*) leafAlloc.malloc(items*sizeof(Triangle1));
-      *(NodeRef*)current.parentNode = This->bvh->encodeLeaf((char*)accel,items);
+      *(NodeRef*)current.parentNode = This->bvh->encodeLeaf((char*)accel,items,0);
       
       for (size_t i=0; i<items; i++) 
       {	
@@ -368,7 +368,7 @@ namespace embree
       
       /* allocate leaf node */
       Triangle4* accel = (Triangle4*) leafAlloc.malloc(sizeof(Triangle4));
-      *(NodeRef*)current.parentNode = This->bvh->encodeLeaf((char*)accel,1);
+      *(NodeRef*)current.parentNode = This->bvh->encodeLeaf((char*)accel,1,0);
       
       ssei vgeomID = -1, vprimID = -1, vmask = -1;
       sse3f v0 = zero, v1 = zero, v2 = zero;
@@ -400,7 +400,7 @@ namespace embree
       
       /* allocate leaf node */
       Triangle1v* accel = (Triangle1v*) leafAlloc.malloc(items*sizeof(Triangle1v));
-      *(NodeRef*)current.parentNode = This->bvh->encodeLeaf((char*)accel,items);
+      *(NodeRef*)current.parentNode = This->bvh->encodeLeaf((char*)accel,items,0);
       
       for (size_t i=0; i<items; i++) 
       {	
@@ -431,7 +431,7 @@ namespace embree
       
       /* allocate leaf node */
       Triangle4v* accel = (Triangle4v*) leafAlloc.malloc(sizeof(Triangle4v));
-      *(NodeRef*)current.parentNode = This->bvh->encodeLeaf((char*)accel,1);
+      *(NodeRef*)current.parentNode = This->bvh->encodeLeaf((char*)accel,1,0);
       
       ssei vgeomID = -1, vprimID = -1, vmask = -1;
       sse3f v0 = zero, v1 = zero, v2 = zero;
@@ -556,7 +556,7 @@ namespace embree
       split_fallback(prims,record1,children[2],children[3]);
 
       /* allocate node */
-      Node* node = (Node*) nodeAlloc.malloc(sizeof(Node)); node->clear();
+      BVH4::UANode* node = (BVH4::UANode*) nodeAlloc.malloc(sizeof(BVH4::UANode)); node->clear();
       *(NodeRef*)current.parentNode = bvh->encodeNode(node);
       
       /* recurse into each child */
@@ -639,7 +639,7 @@ namespace embree
       }
       
       /* allocate node */
-      Node* node = (Node*) nodeAlloc.malloc(sizeof(Node)); node->clear();
+      BVH4::UANode* node = (BVH4::UANode*) nodeAlloc.malloc(sizeof(BVH4::UANode)); node->clear();
       *(NodeRef*)current.parentNode = bvh->encodeNode(node);
       
       /* recurse into each child */

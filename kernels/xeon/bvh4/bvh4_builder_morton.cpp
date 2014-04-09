@@ -547,7 +547,7 @@ namespace embree
       
       /* allocate leaf node */
       Triangle1* accel = (Triangle1*) leafAlloc.malloc(items*sizeof(Triangle1));
-      *current.parent = This->bvh->encodeLeaf((char*)accel,items);
+      *current.parent = This->bvh->encodeLeaf((char*)accel,items,0);
       
       for (size_t i=0; i<items; i++) 
       {	
@@ -586,7 +586,7 @@ namespace embree
       
       /* allocate leaf node */
       Triangle4* accel = (Triangle4*) leafAlloc.malloc(sizeof(Triangle4));
-      *current.parent = This->bvh->encodeLeaf((char*)accel,1);
+      *current.parent = This->bvh->encodeLeaf((char*)accel,1,0);
       
       ssei vgeomID = -1, vprimID = -1, vmask = -1;
       sse3f v0 = zero, v1 = zero, v2 = zero;
@@ -625,7 +625,7 @@ namespace embree
       
       /* allocate leaf node */
       Triangle1v* accel = (Triangle1v*) leafAlloc.malloc(items*sizeof(Triangle1v));
-      *current.parent = This->bvh->encodeLeaf((char*)accel,items);
+      *current.parent = This->bvh->encodeLeaf((char*)accel,items,0);
       
       for (size_t i=0; i<items; i++) 
       {	
@@ -663,7 +663,7 @@ namespace embree
       
       /* allocate leaf node */
       Triangle4v* accel = (Triangle4v*) leafAlloc.malloc(sizeof(Triangle4v));
-      *current.parent = This->bvh->encodeLeaf((char*)accel,1);
+      *current.parent = This->bvh->encodeLeaf((char*)accel,1,0);
       
       ssei vgeomID = -1, vprimID = -1, vmask = -1;
       sse3f v0 = zero, v1 = zero, v2 = zero;
@@ -723,7 +723,7 @@ namespace embree
       split_fallback(record1,children[2],children[3]);
       
       /* allocate node */
-      Node* node = (Node*) nodeAlloc.malloc(sizeof(Node)); node->clear();
+      BVH4::UANode* node = (BVH4::UANode*) nodeAlloc.malloc(sizeof(BVH4::UANode)); node->clear();
       *current.parent = bvh->encodeNode(node);
       
       /* recurse into each child */
@@ -846,7 +846,7 @@ namespace embree
       }
       
       /* allocate node */
-      Node* node = (Node*) nodeAlloc.malloc(sizeof(Node)); node->clear();
+      BVH4::UANode* node = (BVH4::UANode*) nodeAlloc.malloc(sizeof(BVH4::UANode)); node->clear();
       *current.parent = bvh->encodeNode(node);
       
       /* recurse into each child */
@@ -871,7 +871,7 @@ namespace embree
     __forceinline BBox3fa BVH4BuilderMorton::leafBoundsTriangle1(NodeRef& ref)
     {
       BBox3fa bounds = empty;
-      size_t num; Triangle1* tri = (Triangle1*) ref.leaf(num);
+      size_t num,ty; Triangle1* tri = (Triangle1*) ref.getLeaf(num,ty);
       for (size_t i=0; i<num; i++) 
         bounds.extend(tri[i].bounds());
       return bounds;
@@ -880,7 +880,7 @@ namespace embree
     __forceinline BBox3fa BVH4BuilderMorton::leafBoundsTriangle4(NodeRef& ref)
     {
       BBox3fa bounds = empty;
-      size_t num; Triangle4* tri = (Triangle4*) ref.leaf(num);
+      size_t num,ty; Triangle4* tri = (Triangle4*) ref.getLeaf(num,ty);
       for (size_t i=0; i<num; i++) 
         bounds.extend(tri[i].bounds());
       return bounds;
@@ -889,7 +889,7 @@ namespace embree
     __forceinline BBox3fa BVH4BuilderMorton::leafBoundsTriangle1v(NodeRef& ref)
     {
       BBox3fa bounds = empty;
-      size_t num; Triangle1v* tri = (Triangle1v*) ref.leaf(num);
+      size_t num,ty; Triangle1v* tri = (Triangle1v*) ref.getLeaf(num,ty);
       for (size_t i=0; i<num; i++) 
         bounds.extend(tri[i].bounds());
       return bounds;
@@ -898,7 +898,7 @@ namespace embree
     __forceinline BBox3fa BVH4BuilderMorton::leafBoundsTriangle4v(NodeRef& ref)
     {
       BBox3fa bounds = empty;
-      size_t num; Triangle4v* tri = (Triangle4v*) ref.leaf(num);
+      size_t num,ty; Triangle4v* tri = (Triangle4v*) ref.getLeaf(num,ty);
       for (size_t i=0; i<num; i++) 
         bounds.extend(tri[i].bounds());
       return bounds;
@@ -906,8 +906,8 @@ namespace embree
     
     __forceinline BBox3fa BVH4BuilderMorton::node_bounds(NodeRef& ref) const
     {
-      if (ref.isNode())
-        return ref.node()->bounds();
+      if (ref.isUANode())
+        return ref.getUANode()->bounds();
       else
         return leafBounds(ref);
     }
@@ -929,7 +929,7 @@ namespace embree
 	    return leafBounds(ref);
       
       /* recurse if this is an internal node */
-      Node* node = ref.node();
+      BVH4::UANode* node = ref.getUANode();
       const BBox3fa bounds0 = refit_toplevel(node->child(0));
       const BBox3fa bounds1 = refit_toplevel(node->child(1));
       const BBox3fa bounds2 = refit_toplevel(node->child(2));
