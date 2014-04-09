@@ -72,6 +72,7 @@ ADD_ISPC_LIBRARY(embree SHARED
   bvh4/bvh4_builder_binner.cpp
   bvh4/bvh4_builder_toplevel.cpp
   bvh4/bvh4_intersector1.cpp   
+  bvh4/bvh4_intersector1_full.cpp
   bvh4/bvh4_intersector4_chunk.cpp
   bvh4/bvh4_intersector4_hybrid.cpp
   bvh4/bvh4_statistics.cpp
@@ -98,6 +99,7 @@ IF (TARGET_SSE41)
     bvh4/bvh4_builder_binner.cpp
     bvh4/bvh4_builder_toplevel.cpp
     bvh4/bvh4_intersector1.cpp   
+    bvh4/bvh4_intersector1_full.cpp
     bvh4/bvh4_intersector4_chunk.cpp
     bvh4/bvh4_intersector4_hybrid.cpp
     bvh4/bvh4_builder_morton.cpp
