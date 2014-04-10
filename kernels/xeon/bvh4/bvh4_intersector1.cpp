@@ -180,7 +180,7 @@ namespace embree
         /*! this is a leaf node */
         STAT3(normal.trav_leaves,1,1,1);
         size_t num, ty; Primitive* prim = (Primitive*) cur.getLeaf(num,ty);
-        PrimitiveIntersector::intersect(pre,ray,prim,num,bvh->geometry);
+        PrimitiveIntersector::intersect(pre,ray,ty,prim,num,bvh->geometry);
         ray_far = ray.tfar;
       }
       AVX_ZERO_UPPER();
@@ -320,7 +320,7 @@ namespace embree
         /*! this is a leaf node */
         STAT3(shadow.trav_leaves,1,1,1);
         size_t num,ty; Primitive* prim = (Primitive*) cur.getLeaf(num,ty);
-        if (PrimitiveIntersector::occluded(pre,ray,prim,num,bvh->geometry)) {
+        if (PrimitiveIntersector::occluded(pre,ray,ty,prim,num,bvh->geometry)) {
           ray.geomID = 0;
           break;
         }

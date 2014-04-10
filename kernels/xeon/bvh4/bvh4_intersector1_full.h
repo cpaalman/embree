@@ -28,14 +28,6 @@ namespace embree
     template<typename PrimitiveIntersector>
       class BVH4Intersector1Full 
     {
-      /* shortcuts for frequently used types */
-      typedef typename PrimitiveIntersector::Precalculations Precalculations;
-      typedef typename PrimitiveIntersector::Primitive Primitive;
-      typedef BVH4::NodeRef NodeRef;
-      typedef BVH4::Node Node;
-      typedef BVH4::UANode AlignedNode;
-      typedef BVH4::UUNode UnalignedNode;
-
       static const size_t stackSize = 1+3*BVH4::maxDepth;
 
       struct __aligned(16) StackItem 
@@ -86,11 +78,12 @@ namespace embree
       };
 
     private:
-      static __forceinline size_t intersectBox(const BVH4::UANode* node, 
-                                               const sse3f& org, const sse3f& rdir, const sse3f& org_rdir, 
-                                               const size_t nearX, const size_t nearY, const size_t nearZ,
-                                               ssef& tNear, ssef& tFar);
-      static size_t intersectBox(const UnalignedNode* node, Ray& ray, const sse3f& org, const sse3f& dir, ssef& tNear, ssef& tFar);
+      static __forceinline size_t intersectBox(const BVH4::UANode* node, const sse3f& org, const sse3f& rdir, const sse3f& org_rdir, 
+                                               const size_t nearX, const size_t nearY, const size_t nearZ, ssef& tNear, ssef& tFar);
+      static __forceinline size_t intersectBox(const BVH4::CANode* node, const sse3f& org, const sse3f& rdir, const sse3f& org_rdir, 
+                                               const size_t nearX, const size_t nearY, const size_t nearZ, ssef& tNear, ssef& tFar);
+      static size_t intersectBox(const BVH4::UUNode* node, Ray& ray, const sse3f& org, const sse3f& dir, ssef& tNear, ssef& tFar);
+      static size_t intersectBox(const BVH4::CUNode* node, Ray& ray, const sse3f& org, const sse3f& dir, ssef& tNear, ssef& tFar);
       
     public:
       static void intersect(const BVH4* This, Ray& ray);
