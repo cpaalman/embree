@@ -24,8 +24,8 @@
 #include "geometry/bezier1i_intersector1.h"
 #endif
 
-#define TFAR(x) 
-#define NTFAR(x) x
+#define TFAR(x) x
+#define NTFAR(x) 
 
 namespace embree
 { 
@@ -243,8 +243,8 @@ namespace embree
             mask = intersectBox(cur.getUANode(),org,rdir,org_rdir,nearX,nearY,nearZ,tNear,tFar);
 
           /*! process nodes with unaligned bounds */
-          //else if (unlikely(cur.isUUNode()))
-          //  mask = intersectBox(cur.getUUNode(),ray,org,dir,tNear,tFar);
+          else if (unlikely(cur.isUUNode()))
+            mask = intersectBox(cur.getUUNode(),ray,org,dir,tNear,tFar);
 
           /*! otherwise this is a leaf */
           else break;
@@ -375,8 +375,8 @@ namespace embree
             mask = intersectBox(cur.getUANode(),org,rdir,org_rdir,nearX,nearY,nearZ,tNear,tFar);
 
           /*! process nodes with unaligned bounds */
-          //else if (unlikely(cur.isUUNode()))
-          //  mask = intersectBox(cur.getUUNode(),ray,org,dir,tNear,tFar);
+          else if (unlikely(cur.isUUNode()))
+            mask = intersectBox(cur.getUUNode(),ray,org,dir,tNear,tFar);
 
           /*! otherwise this is a leaf */
           else break;

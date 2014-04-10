@@ -305,6 +305,7 @@ namespace embree
 
     Builder* builder = NULL;
     if      (g_builder == "default") builder = BVH4BuilderObjectSplit4(accel,&scene->flat_triangle_source_1,scene,1,inf);
+    else if (g_builder == "tris"   ) builder = BVH4BuilderObjectSplit4(accel,&scene->flat_triangle_source_1,scene,1,inf);
     else if (g_builder == "hair"   ) builder = BVH4BuilderHair_(accel,scene);
     else throw std::runtime_error("unknown hair builder");
     return new AccelInstance(accel,builder,intersectors);

@@ -867,7 +867,7 @@ namespace embree
     size_t numGeneratedPrimsOld = atomic_add(&numGeneratedPrims,N); 
     if (numGeneratedPrimsOld%10000 > (numGeneratedPrimsOld+N)%10000) std::cout << "." << std::flush; 
     //assert(N <= (size_t)BVH4::maxLeafBlocks);
-    if (bvh->primTy[0] == &Bezier1Type::type) { 
+    if (bvh->primTy[1] == &Bezier1Type::type) { 
       Bezier1* leaf = (Bezier1*) bvh->allocPrimitiveBlocks(threadIndex,0,N);
       atomic_set<PrimRefBlock>::block_iterator_unsafe iter(prims);
       for (size_t i=0; i<N; i++) { leaf[i] = *iter; iter++; }
@@ -877,9 +877,9 @@ namespace embree
       while (atomic_set<PrimRefBlock>::item* block = prims.take())
         alloc.free(threadIndex,block);
 
-      return bvh->encodeLeaf((char*)leaf,N,0);
+      return bvh->encodeLeaf((char*)leaf,N,1);
     } 
-    else if (bvh->primTy[0] == &SceneBezier1i::type) {
+    else if (bvh->primTy[1] == &SceneBezier1i::type) {
       Bezier1i* leaf = (Bezier1i*) bvh->allocPrimitiveBlocks(threadIndex,0,N);
       atomic_set<PrimRefBlock>::block_iterator_unsafe iter(prims);
       for (size_t i=0; i<N; i++) {
@@ -893,7 +893,7 @@ namespace embree
       while (atomic_set<PrimRefBlock>::item* block = prims.take())
         alloc.free(threadIndex,block);
 
-      return bvh->encodeLeaf((char*)leaf,N,0);
+      return bvh->encodeLeaf((char*)leaf,N,1);
     }
     else 
       throw std::runtime_error("unknown primitive type");

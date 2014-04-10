@@ -23,7 +23,7 @@ namespace embree
     numNodes = depth = 0;
     for (size_t i=0; i<4; i++) numLeaves[i] = numPrimBlocks[i] = numPrims[i] = 0;
     bvhSAH = leafSAH = 0.0f;
-    statistics(bvh->root,bvh->bounds,depth);
+    statistics(bvh->root,safeArea(bvh->bounds),depth);
     bvhSAH /= area(bvh->bounds);
     leafSAH /= area(bvh->bounds);
     assert(depth <= BVH4::maxDepth);
@@ -50,7 +50,7 @@ namespace embree
     for (size_t i=0; i<4; i++) {
       bytesPrim[i] = 0;
       numLeavesTotal += numLeaves[i];
-      if (bvh->primTy[i] == 0) continue;
+      if (bvh->primTy[i] == NULL) continue;
       bytesPrim[i] = numPrimBlocks[i]*bvh->primTy[i]->bytes;
       bytesPrims += bytesPrim[i];
     }
@@ -89,21 +89,12 @@ namespace embree
     return stream.str();
   }
 
-  void BVH4Statistics::statistics(NodeRef node, const BBox3fa& bounds, size_t& depth)
+  void BVH4Statistics::statistics(NodeRef node, const float A, size_t& depth)
   {
-    float A = bounds.empty() ? 0.0f : area(bounds);
-
     if (node.isNode())
     {
       numNodes++;
-      depth = 0;
-      size_t cdepth = 0;
-      BVH4::UANode* n = node.getUANode(); // FIXME: properly handle node types
-      bvhSAH += A*BVH4::travCost;
-      for (size_t i=0; i<BVH4::N; i++) {
-        statistics(n->child(i),n->bounds(i),cdepth); 
-        depth=max(depth,cdepth);
-      }
+      BVH4::Node* n = node.getNode();
       for (size_t i=0; i<BVH4::N; i++) {
         if (n->child(i) == BVH4::emptyNode) {
           for (; i<BVH4::N; i++) {
@@ -112,11 +103,34 @@ namespace embree
           }
           break;
         }
-      }    
+      }
+    }    
+
+    if (node.isUANode())
+    {
+      depth = 0;
+      size_t cdepth = 0;
+      BVH4::UANode* n = node.getUANode();
+      bvhSAH += A*BVH4::travCost;
+      for (size_t i=0; i<BVH4::N; i++) {
+        statistics(n->child(i),safeArea(n->bounds(i)),cdepth); 
+        depth=max(depth,cdepth);
+      }
       depth++;
-      return;
     }
-    else
+    else if (node.isUUNode())
+    {
+      depth = 0;
+      size_t cdepth = 0;
+      BVH4::UUNode* n = node.getUUNode();
+      bvhSAH += A*BVH4::travCost;
+      for (size_t i=0; i<BVH4::N; i++) {
+        statistics(n->child(i),safeArea(n->extend(i)),cdepth); 
+        depth=max(depth,cdepth);
+      }
+      depth++;
+    }
+    else if (node.isLeaf())
     {
       depth = 0;
       size_t num,ty; const char* tri = node.getLeaf(num,ty);
@@ -132,5 +146,7 @@ namespace embree
       bvhSAH += sah;
       leafSAH += sah;
     }
+    else
+      throw std::runtime_error("unsupported node type");
   }
 }
