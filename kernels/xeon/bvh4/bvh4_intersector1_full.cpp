@@ -234,14 +234,17 @@ namespace embree
         /* downtraversal loop */
         while (true)
         {
+          NTFAR(tNear = ray.tnear);
+          NTFAR(tFar  = ray.tfar);
+
           /*! process nodes with aligned bounds */
           size_t mask;
           if (likely(cur.isUANode()))
             mask = intersectBox(cur.getUANode(),org,rdir,org_rdir,nearX,nearY,nearZ,tNear,tFar);
 
           /*! process nodes with unaligned bounds */
-          else if (unlikely(cur.isUUNode()))
-            mask = intersectBox(cur.getUUNode(),ray,org,dir,tNear,tFar);
+          //else if (unlikely(cur.isUUNode()))
+          //  mask = intersectBox(cur.getUUNode(),ray,org,dir,tNear,tFar);
 
           /*! otherwise this is a leaf */
           else break;
@@ -258,27 +261,27 @@ namespace embree
           c0.prefetch();
 
           if (likely(mask == 0)) {
-            cur = c0;  tNear = tNear[r]; tFar = tFar[r]; 
+            cur = c0;  TFAR(tNear = tNear[r]; tFar = tFar[r]); 
             assert(cur != BVH4::emptyNode);
             continue;
           }
 
           /*! two children are hit, push far child, and continue with closer child */
-          const float n0 = tNear[r]; const float f0 = tFar[r]; 
+          const float n0 = tNear[r]; TFAR(const float f0 = tFar[r]); 
           r = __bscf(mask);
-          BVH4::NodeRef c1 = node->child(r); c1.prefetch(); const float n1 = tNear[r]; const float f1 = tFar[r];
+          BVH4::NodeRef c1 = node->child(r); c1.prefetch(); const float n1 = tNear[r]; TFAR(const float f1 = tFar[r]);
           //assert(c0 != BVH4::emptyNode); // FIXME: enable
           //assert(c1 != BVH4::emptyNode); // FIXME: enable
           if (likely(mask == 0)) {
             assert(stackPtr < stackEnd); 
             if (n0 < n1) { 
               stackPtr->ref = c1; stackPtr->tNear = n1; TFAR(stackPtr->tFar = f1); stackPtr++; 
-              cur = c0; tNear = n0; tFar = f0; 
+              cur = c0; TFAR(tNear = n0; tFar = f0); 
               continue; 
             }
             else { 
               stackPtr->ref = c0; stackPtr->tNear = n0; TFAR(stackPtr->tFar = f0); stackPtr++; 
-              cur = c1; tNear = n1; tFar = f1; 
+              cur = c1; TFAR(tNear = n1; tFar = f1); 
               continue; 
             }
           }
@@ -293,23 +296,21 @@ namespace embree
           /*! three children are hit, push all onto stack and sort 3 stack items, continue with closest child */
           assert(stackPtr < stackEnd); 
           r = __bscf(mask);
-          BVH4::NodeRef c = node->child(r); c.prefetch(); float n2 = tNear[r]; float f2 = tFar[r]; stackPtr->ref = c; stackPtr->tNear = n2; TFAR(stackPtr->tFar = f2); stackPtr++;
+          BVH4::NodeRef c = node->child(r); c.prefetch(); float n2 = tNear[r]; TFAR(float f2 = tFar[r]); stackPtr->ref = c; stackPtr->tNear = n2; TFAR(stackPtr->tFar = f2); stackPtr++;
           //assert(c != BVH4::emptyNode); // FIXME: enable
           if (likely(mask == 0)) {
             sort(stackPtr[-1],stackPtr[-2],stackPtr[-3]);
-            cur = (BVH4::NodeRef) stackPtr[-1].ref; tNear = stackPtr[-1].tNear; TFAR(tFar = stackPtr[-1].tFar); stackPtr--;
-            NTFAR(tFar = ray.tfar);
+            cur = (BVH4::NodeRef) stackPtr[-1].ref; TFAR(tNear = stackPtr[-1].tNear; tFar = stackPtr[-1].tFar); stackPtr--;
             continue;
           }
 
           /*! four children are hit, push all onto stack and sort 4 stack items, continue with closest child */
           assert(stackPtr < stackEnd); 
           r = __bscf(mask);
-          c = node->child(r); c.prefetch(); float n3 = tNear[r]; float f3 = tFar[r]; stackPtr->ref = c; stackPtr->tNear = n3; TFAR(stackPtr->tFar = f3); stackPtr++;
+          c = node->child(r); c.prefetch(); float n3 = tNear[r]; TFAR(float f3 = tFar[r]); stackPtr->ref = c; stackPtr->tNear = n3; TFAR(stackPtr->tFar = f3); stackPtr++;
           //assert(c != BVH4::emptyNode); // FIXME: enable
           sort(stackPtr[-1],stackPtr[-2],stackPtr[-3],stackPtr[-4]);
-          cur = (BVH4::NodeRef) stackPtr[-1].ref; tNear = stackPtr[-1].tNear; TFAR(tFar = stackPtr[-1].tFar); stackPtr--;
-          NTFAR(tFar = ray.tfar);
+          cur = (BVH4::NodeRef) stackPtr[-1].ref; TFAR(tNear = stackPtr[-1].tNear; tFar = stackPtr[-1].tFar); stackPtr--;
         }
         
         /*! this is a leaf node */
@@ -365,14 +366,17 @@ namespace embree
         /* downtraversal loop */
         while (true)
         {
+          NTFAR(tNear = ray.tnear);
+          NTFAR(tFar  = ray.tfar);
+
           /*! process nodes with aligned bounds */
           size_t mask;
           if (likely(cur.isUANode()))
             mask = intersectBox(cur.getUANode(),org,rdir,org_rdir,nearX,nearY,nearZ,tNear,tFar);
 
           /*! process nodes with unaligned bounds */
-          else if (unlikely(cur.isUUNode()))
-            mask = intersectBox(cur.getUUNode(),ray,org,dir,tNear,tFar);
+          //else if (unlikely(cur.isUUNode()))
+          //  mask = intersectBox(cur.getUUNode(),ray,org,dir,tNear,tFar);
 
           /*! otherwise this is a leaf */
           else break;
@@ -388,21 +392,21 @@ namespace embree
           BVH4::NodeRef c0 = node->child(r); c0.prefetch();
 
           if (likely(mask == 0)) {
-            cur = c0; tNear = tNear[r]; tFar = tFar[r];
+            cur = c0; TFAR(tNear = tNear[r]; tFar = tFar[r]);
             assert(cur != BVH4::emptyNode);
             continue;
           }
      
           /*! two children are hit, push far child, and continue with closer child */
-           const float n0 = tNear[r]; const float f0 = tFar[r]; 
+          const float n0 = tNear[r]; TFAR(const float f0 = tFar[r]); 
           r = __bscf(mask);
-          BVH4::NodeRef c1 = node->child(r); c1.prefetch(); const float n1 = tNear[r]; const float f1 = tFar[r];
+          BVH4::NodeRef c1 = node->child(r); c1.prefetch(); const float n1 = tNear[r]; TFAR(const float f1 = tFar[r]);
           //assert(c0 != BVH4::emptyNode); // FIXME: enable
           //assert(c1 != BVH4::emptyNode); // FIXME: enable
           if (likely(mask == 0)) {
             assert(stackPtr < stackEnd); 
-            if (n0 < n1) { stackPtr->ref = c1; stackPtr->tNear = n1; TFAR(stackPtr->tFar = f1); stackPtr++; cur = c0; tNear = n0; tFar = f0; continue; }
-            else         { stackPtr->ref = c0; stackPtr->tNear = n0; TFAR(stackPtr->tFar = f0); stackPtr++; cur = c1; tNear = n1; tFar = f1; continue; }
+            if (n0 < n1) { stackPtr->ref = c1; stackPtr->tNear = n1; TFAR(stackPtr->tFar = f1); stackPtr++; cur = c0; TFAR(tNear = n0; tFar = f0); continue; }
+            else         { stackPtr->ref = c0; stackPtr->tNear = n0; TFAR(stackPtr->tFar = f0); stackPtr++; cur = c1; TFAR(tNear = n1; tFar = f1); continue; }
           }
           
           /*! Here starts the slow path for 3 or 4 hit children. We push
@@ -415,23 +419,21 @@ namespace embree
           /*! three children are hit, push all onto stack and sort 3 stack items, continue with closest child */
           assert(stackPtr < stackEnd); 
           r = __bscf(mask);
-          BVH4::NodeRef c = node->child(r); c.prefetch(); float n2 = tNear[r]; float f2 = tFar[r]; stackPtr->ref = c; stackPtr->tNear = n2; TFAR(stackPtr->tFar = f2); stackPtr++;
+          BVH4::NodeRef c = node->child(r); c.prefetch(); float n2 = tNear[r]; TFAR(float f2 = tFar[r]); stackPtr->ref = c; stackPtr->tNear = n2; TFAR(stackPtr->tFar = f2); stackPtr++;
           //assert(c != BVH4::emptyNode); // FIXME: enable
           if (likely(mask == 0)) {
             sort(stackPtr[-1],stackPtr[-2],stackPtr[-3]);
-            cur = (BVH4::NodeRef) stackPtr[-1].ref; tNear = stackPtr[-1].tNear; TFAR(tFar = stackPtr[-1].tFar); stackPtr--;
-            NTFAR(tFar = ray.tfar);
+            cur = (BVH4::NodeRef) stackPtr[-1].ref; TFAR(tNear = stackPtr[-1].tNear; tFar = stackPtr[-1].tFar); stackPtr--;
             continue;
           }
 
           /*! four children are hit, push all onto stack and sort 4 stack items, continue with closest child */
           assert(stackPtr < stackEnd); 
           r = __bscf(mask);
-          c = node->child(r); c.prefetch(); float n3 = tNear[r]; float f3 = tFar[r]; stackPtr->ref = c; stackPtr->tNear = n3; TFAR(stackPtr->tFar = f3); stackPtr++;
+          c = node->child(r); c.prefetch(); float n3 = tNear[r]; TFAR(float f3 = tFar[r]); stackPtr->ref = c; stackPtr->tNear = n3; TFAR(stackPtr->tFar = f3); stackPtr++;
           //assert(c != BVH4::emptyNode); // FIXME: enable
           sort(stackPtr[-1],stackPtr[-2],stackPtr[-3],stackPtr[-4]);
-          cur = (BVH4::NodeRef) stackPtr[-1].ref; tNear = stackPtr[-1].tNear; TFAR(tFar = stackPtr[-1].tFar); stackPtr--;
-          NTFAR(tFar = ray.tfar);
+          cur = (BVH4::NodeRef) stackPtr[-1].ref; TFAR(tNear = stackPtr[-1].tNear; tFar = stackPtr[-1].tFar); stackPtr--;
         }
         
         /*! this is a leaf node */

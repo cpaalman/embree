@@ -45,7 +45,6 @@ namespace embree
     static const size_t deco_mask    = 0xF00000000000000FLL;  //!< these bits are used to decorate the pointer
     static const size_t barrier_mask = 0x0000000000000008LL;  //!< barrier bit to mark nodes during build
     static const size_t type_mask    = 0x0000000000000007LL;  //!< node and leaf type bits
-    static const size_t items_mask   = 0xF000000000000000LL;  //!< number of items inside a leaf
     static const size_t alignment    = 0x0000000000000010LL;  //!< required pointer alignment
 
     /*! node types */
@@ -58,17 +57,20 @@ namespace embree
 
     /*! Empty node */
     static const size_t emptyNode = 0x0000000000000004LL;
+    //static const size_t emptyNode = 0x0000000000000001LL;
 
     /*! Invalid node, used as marker in traversal */
     static const size_t invalidNode = 0x0FFFFFFFFFFFFFF4LL;
-      
+    //static const size_t invalidNode = 0xFFFFFFFFFFFFFFF1LL;
+
     /*! Maximal depth of the BVH. */
     static const size_t maxBuildDepth = 32;
     static const size_t maxBuildDepthLeaf = maxBuildDepth+16;
     static const size_t maxDepth = maxBuildDepthLeaf+maxBuildDepthLeaf+maxBuildDepth;
     
     /*! Maximal number of primitive blocks in a leaf. */
-    static const size_t maxLeafBlocks = 15;
+    //static const size_t maxLeafBlocks = 15;
+    static const size_t maxLeafBlocks = 6;
 
     /*! Cost of one traversal step. */
     static const int travCost = 1; // FIXME: remove
@@ -105,9 +107,11 @@ namespace embree
 
       /*! checks if this is a leaf */
       __forceinline bool isLeaf() const { return (ptr & type_mask) >= tyL0; }
+      //__forceinline bool isLeaf() const { return (ptr & type_mask) != 0; }
 
       /*! checks if this is a node */
       __forceinline bool isNode() const { return (ptr & type_mask) < tyL0; }
+      //__forceinline bool isNode() const { return (ptr & type_mask) == 0; }
       
       /*! checks for different node types */
       __forceinline bool isUANode() const { return (ptr & type_mask) == tyUA; }
@@ -141,6 +145,10 @@ namespace embree
         num  = ptr >> 60;
         type = (ptr & type_mask) - tyL0;
         return (char*)(ptr & ~deco_mask);
+        //return (char*)(((ptr >> 4) << 8) >> 4); //~deco_mask);
+        //num = (ptr & type_mask)-1;
+        //type = 0;
+        //return (char*)(ptr & ~type_mask);
       }
 
     private:
@@ -649,6 +657,7 @@ namespace embree
       assert(((size_t)tri & deco_mask) == 0); 
       assert(type < maxLeafTypes);
       return NodeRef((size_t)tri | (tyL0 + type) | (min(num,maxLeafBlocks) << 60));
+      //return NodeRef((size_t)tri | (1+min(num,maxLeafBlocks)));
     }
 
   public:
