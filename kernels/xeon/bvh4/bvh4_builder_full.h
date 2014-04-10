@@ -18,6 +18,7 @@
 
 #include "geometry/primitive.h"
 #include "geometry/bezier1.h"
+#include "geometry/triangle1v.h"
 
 namespace embree
 {
@@ -94,20 +95,20 @@ namespace embree
         ALIGNED_CLASS_(4096);
       public:
       
-        __forceinline atomic_set<PrimRefBlock<PrimRef> >::item* malloc(size_t thread, AllocatorBase* alloc) 
+        __forceinline typename atomic_set<PrimRefBlock<PrimRef> >::item* malloc(size_t thread, AllocatorBase* alloc) 
         {
           /* try to take a block from local list */
           atomic_set<PrimRefBlock<PrimRef> >::item* ptr = local_free_blocks.take_unsafe();
-          if (ptr) return new (ptr) atomic_set<PrimRefBlock<PrimRef> >::item();
+          if (ptr) return new (ptr) typename atomic_set<PrimRefBlock<PrimRef> >::item();
           
           /* if this failed again we have to allocate more memory */
-          ptr = (atomic_set<PrimRefBlock<PrimRef> >::item*) alloc->malloc(sizeof(atomic_set<PrimRefBlock<PrimRef> >::item));
+          ptr = (typename atomic_set<PrimRefBlock<PrimRef> >::item*) alloc->malloc(sizeof(typename atomic_set<PrimRefBlock<PrimRef> >::item));
           
           /* return first block */
-          return new (ptr) atomic_set<PrimRefBlock<PrimRef> >::item();
+          return new (ptr) typename atomic_set<PrimRefBlock<PrimRef> >::item();
         }
       
-        __forceinline void free(atomic_set<PrimRefBlock<PrimRef> >::item* ptr) {
+        __forceinline void free(typename atomic_set<PrimRefBlock<PrimRef> >::item* ptr) {
           local_free_blocks.insert_unsafe(ptr);
         }
         
@@ -128,12 +129,12 @@ namespace embree
       }
       
       /*! Allocate a primitive block */
-      __forceinline atomic_set<PrimRefBlock<PrimRef> >::item* malloc(size_t thread) {
+      __forceinline typename atomic_set<PrimRefBlock<PrimRef> >::item* malloc(size_t thread) {
         return threadPrimBlockAllocator[thread].malloc(thread,this);
       }
       
       /*! Frees a primitive block */
-      __forceinline void free(size_t thread, atomic_set<PrimRefBlock<PrimRef> >::item* block) {
+      __forceinline void free(size_t thread, typename atomic_set<PrimRefBlock<PrimRef> >::item* block) {
         return threadPrimBlockAllocator[thread].free(block);
       }
       
@@ -147,12 +148,11 @@ namespace embree
       __forceinline BuildTask () {}
 
       __forceinline BuildTask (BVH4::NodeRef* dst, size_t depth, size_t size, bool makeleaf, TriRefList& tris, BezierRefList& beziers, const NAABBox3fa& bounds)
-        : dst(dst), depth(depth), size(size), makeleaf(makeleaf), prims(prims), bounds(bounds) {}
+        : dst(dst), depth(depth), size(size), makeleaf(makeleaf), tris(tris), beziers(beziers), bounds(bounds) {}
 
     public:
       __forceinline friend bool operator< (const BuildTask& a, const BuildTask& b) {
         return area(a.bounds.bounds) < area(b.bounds.bounds);
-        //return area(a.bounds.bounds)/double(a.size) < area(b.bounds.bounds)/double(b.size);
       }
 
     public:
@@ -236,20 +236,40 @@ namespace embree
 
   private:
 
-    template<typename List>
-      void insert(size_t threadIndex, List& prims_i, List& prims_o);
+    /*! calculate bounds for range of primitives */
+    static const BBox3fa computeAlignedBounds(TriRefList& tris);
+    static const BBox3fa computeAlignedBounds(BezierRefList& beziers);
+    static const BBox3fa computeAlignedBounds(TriRefList& tris, BezierRefList& beziers);
+    
+    /*! calculate bounds for range of primitives */
+    static const NAABBox3fa computeAlignedBounds(TriRefList& tris, const LinearSpace3fa& space);
+    static const NAABBox3fa computeAlignedBounds(BezierRefList& beziers, const LinearSpace3fa& space);
+    static const NAABBox3fa computeAlignedBounds(TriRefList& tris, BezierRefList& beziers, const LinearSpace3fa& space);
 
-    template<typename List, typename Left>
-      void split(size_t threadIndex, List& prims, const Left& left, 
-                 List& lprims_o, size_t& lnum_o, List& rprims_o, size_t& rnum_o);
+    void insert(size_t threadIndex, TriRefList& prims_i, TriRefList& prims_o);
+    void insert(size_t threadIndex, BezierRefList& prims_i, BezierRefList& prims_o);
+
+    template<typename Left>
+      void split(size_t threadIndex, 
+                 TriRefList& prims, const Left& left, 
+                 TriRefList& lprims_o, size_t& lnum_o, 
+                 TriRefList& rprims_o, size_t& rnum_o);
+
+    template<typename Left>
+      void split(size_t threadIndex, 
+                 BezierRefList& prims, const Left& left, 
+                 BezierRefList& lprims_o, size_t& lnum_o, 
+                 BezierRefList& rprims_o, size_t& rnum_o);
 
     /*! creates a leaf node */
-    BVH4::NodeRef leaf(size_t threadIndex, size_t depth, atomic_set<PrimRefBlock>& prims, const NAABBox3fa& bounds);
+    BVH4::NodeRef leaf(size_t threadIndex, size_t depth, TriRefList& tris, const NAABBox3fa& bounds);
+    BVH4::NodeRef leaf(size_t threadIndex, size_t depth, BezierRefList& beziers, const NAABBox3fa& bounds);
+    BVH4::NodeRef leaf(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const NAABBox3fa& bounds);
 
     bool split(size_t threadIndex, size_t depth, 
-               atomic_set<PrimRefBlock>& prims, const NAABBox3fa& bounds, size_t size,
-               atomic_set<PrimRefBlock>& lprims, size_t& lsize,
-               atomic_set<PrimRefBlock>& rprims, size_t& rsize,
+               TriRefList& tris , BezierRefList& beziers , const NAABBox3fa& bounds, size_t size,
+               TriRefList& ltris, BezierRefList& lbeziers, size_t& lsize,
+               TriRefList& rtris, BezierRefList& rbeziers, size_t& rsize,
                bool& isAligned);
 
     /*! execute single task and create subtasks */
@@ -280,7 +300,8 @@ namespace embree
     int enablePreSubdivision;
 
     BVH4* bvh;         //!< output
-    PrimRefBlockAlloc alloc;                 //!< Allocator for primitive blocks
+    PrimRefBlockAlloc<Bezier1> allocBezierRefs;                 //!< Allocator for primitive blocks
+    PrimRefBlockAlloc<Triangle1v> allocTriRefs;                 //!< Allocator for primitive blocks
 
     MutexSys taskMutex;
     volatile atomic_t numActiveTasks;

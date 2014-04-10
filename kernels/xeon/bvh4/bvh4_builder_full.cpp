@@ -18,36 +18,16 @@
 #define BVH4HAIR_COMPRESS_UNALIGNED_NODES 0
 
 #include "bvh4.h"
-#include "bvh4_builder_hair.h"
+#include "bvh4_builder_full.h"
 #include "bvh4_statistics.h"
 #include "common/scene_bezier_curves.h"
+#include "geometry/triangle4.h"
 
 namespace embree
 {
   extern double g_hair_builder_replication_factor;
   
-  /*! scales orthonormal transformation into the range -127 to +127 */
-  __forceinline const LinearSpace3fa compressTransform(const LinearSpace3fa& xfm)
-  {
-#if BVH4HAIR_COMPRESS_UNALIGNED_NODES
-    assert(xfm.vx.x >= -1.0f && xfm.vx.x <= 1.0f);
-    assert(xfm.vx.y >= -1.0f && xfm.vx.y <= 1.0f);
-    assert(xfm.vx.z >= -1.0f && xfm.vx.z <= 1.0f);
-    assert(xfm.vy.x >= -1.0f && xfm.vy.x <= 1.0f);
-    assert(xfm.vy.y >= -1.0f && xfm.vy.y <= 1.0f);
-    assert(xfm.vy.z >= -1.0f && xfm.vy.z <= 1.0f);
-    assert(xfm.vz.x >= -1.0f && xfm.vz.x <= 1.0f);
-    assert(xfm.vz.y >= -1.0f && xfm.vz.y <= 1.0f);
-    assert(xfm.vz.z >= -1.0f && xfm.vz.z <= 1.0f);
-    return LinearSpace3fa (clamp(trunc(127.0f*xfm.vx),Vec3fa(-127.0f),Vec3fa(+127.0f))/127.0f,
-                           clamp(trunc(127.0f*xfm.vy),Vec3fa(-127.0f),Vec3fa(+127.0f))/127.0f,
-                           clamp(trunc(127.0f*xfm.vz),Vec3fa(-127.0f),Vec3fa(+127.0f))/127.0f);
-#else
-    return xfm;
-#endif
-  }
-
-  BVH4BuilderHair::BVH4BuilderHair (BVH4* bvh, Scene* scene)
+  BVH4BuilderFull::BVH4BuilderFull (BVH4* bvh, Scene* scene)
     : scene(scene), minLeafSize(1), maxLeafSize(inf), bvh(bvh), remainingReplications(0)
   {
     if (BVH4::maxLeafBlocks < this->maxLeafSize) 
@@ -78,7 +58,7 @@ namespace embree
     }
   }
 
-  void BVH4BuilderHair::build(size_t threadIndex, size_t threadCount) 
+  void BVH4BuilderFull::build(size_t threadIndex, size_t threadCount) 
   {
     /* fast path for empty BVH */
     size_t numPrimitives = scene->numCurves << enablePreSubdivision;
@@ -102,7 +82,7 @@ namespace embree
       PRINT(enableStrandSplits);
       PRINT(enablePreSubdivision);
 
-      std::cout << "building " << bvh->name() + " using BVH4BuilderHair ..." << std::flush;
+      std::cout << "building " << bvh->name() + " using BVH4BuilderFull ..." << std::flush;
       t0 = getSeconds();
     }
 
@@ -111,37 +91,68 @@ namespace embree
 
     /* create initial curve list */
     BBox3fa bounds = empty;
+    size_t numTriangles = 0;
     size_t numVertices = 0;
-    atomic_set<PrimRefBlock> prims;
+    TriRefList tris;
+    BezierRefList beziers;
     for (size_t i=0; i<scene->size(); i++) 
     {
       Geometry* geom = scene->get(i);
-      if (geom->type != BEZIER_CURVES) continue;
       if (!geom->isEnabled()) continue;
-      BezierCurves* set = (BezierCurves*) geom;
-      numVertices += set->numVertices;
-      for (size_t j=0; j<set->numCurves; j++) {
-        const int ofs = set->curve(j);
-        const Vec3fa& p0 = set->vertex(ofs+0);
-        const Vec3fa& p1 = set->vertex(ofs+1);
-        const Vec3fa& p2 = set->vertex(ofs+2);
-        const Vec3fa& p3 = set->vertex(ofs+3);
-        const Bezier1 bezier(p0,p1,p2,p3,0,1,i,j);
-        bounds.extend(subdivideAndAdd(threadIndex,prims,bezier,enablePreSubdivision));
+      if (geom->type == BEZIER_CURVES) {
+        BezierCurves* set = (BezierCurves*) geom;
+        numVertices += set->numVertices;
+        for (size_t j=0; j<set->numCurves; j++) {
+          const int ofs = set->curve(j);
+          const Vec3fa& p0 = set->vertex(ofs+0);
+          const Vec3fa& p1 = set->vertex(ofs+1);
+          const Vec3fa& p2 = set->vertex(ofs+2);
+          const Vec3fa& p3 = set->vertex(ofs+3);
+          const Bezier1 bezier(p0,p1,p2,p3,0,1,i,j);
+          //bounds.extend(subdivideAndAdd(threadIndex,prims,bezier,enablePreSubdivision));
+          bounds.extend(bezier.bounds());
+          BezierRefList::item* block = beziers.head();
+          if (block == NULL || !block->insert(bezier)) {
+            block = beziers.insert(allocBezierRefs.malloc(threadIndex));
+            block->insert(bezier);
+          }
+        }
+      }
+      if (geom->type == TRIANGLE_MESH) 
+      {
+        TriangleMesh* set = (TriangleMesh*) geom;
+        if (set->numTimeSteps != 1) continue;
+        numTriangles += set->numTriangles;
+        numVertices += set->numVertices;
+        for (size_t j=0; j<set->numTriangles; j++) {
+          const TriangleMesh::Triangle tri = set->triangle(j);
+          const Vec3fa& p0 = set->vertex(tri.v[0]);
+          const Vec3fa& p1 = set->vertex(tri.v[1]);
+          const Vec3fa& p2 = set->vertex(tri.v[2]);
+          const Triangle1v triangle(p0,p1,p2,i,j,0);
+          //bounds.extend(subdivideAndAdd(threadIndex,prims,bezier,enablePreSubdivision));
+          bounds.extend(triangle.bounds());
+          TriRefList::item* block = tris.head();
+          if (block == NULL || !block->insert(triangle)) {
+            block = tris.insert(allocTriRefs.malloc(threadIndex));
+            block->insert(triangle);
+          }
+        }
       }
     }
 
-    bvh->numPrimitives = scene->numCurves;
+    bvh->numPrimitives = scene->numCurves + numTriangles;
     bvh->numVertices = 0;
-    if (bvh->primTy[0] == &SceneBezier1i::type) bvh->numVertices = numVertices;
+    if (bvh->primTy[0] == &SceneBezier1i::type) bvh->numVertices = numVertices; // FIXME
 
     /* start recursive build */
     remainingReplications = g_hair_builder_replication_factor*numPrimitives;
-    const NAABBox3fa ubounds = computeUnalignedBounds(prims);
-    BuildTask task(&bvh->root,0,numPrimitives,false,prims,ubounds);
+    //const NAABBox3fa ubounds = computeUnalignedBounds(prims);
+    const BBox3fa abounds = computeAlignedBounds(tris,beziers);
+    BuildTask task(&bvh->root,0,numPrimitives,false,tris,beziers,abounds);
     bvh->bounds = bounds;
 
-#if 0
+#if 1
     recurseTask(threadIndex,task);
 #else
     numActiveTasks = 1;
@@ -164,25 +175,8 @@ namespace embree
     }
   }
 
-  const BBox3fa BVH4BuilderHair::subdivideAndAdd(size_t threadIndex, atomic_set<PrimRefBlock>& prims, const Bezier1& bezier, size_t depth)
-  {
-    if (depth == 0) {
-      atomic_set<PrimRefBlock>::item* block = prims.head();
-      if (block == NULL || !block->insert(bezier)) {
-        block = prims.insert(alloc.malloc(threadIndex));
-        block->insert(bezier);
-      }
-      return bezier.bounds();
-    }
-
-    Bezier1 bezier0,bezier1;
-    bezier.subdivide(bezier0,bezier1);
-    const BBox3fa bounds0 = subdivideAndAdd(threadIndex,prims,bezier0,depth-1);
-    const BBox3fa bounds1 = subdivideAndAdd(threadIndex,prims,bezier1,depth-1);
-    return merge(bounds0,bounds1);
-  }
-
-  void BVH4BuilderHair::task_build_parallel(size_t threadIndex, size_t threadCount, size_t taskIndex, size_t taskCount, TaskScheduler::Event* event) 
+#if 0
+  void BVH4BuilderFull::task_build_parallel(size_t threadIndex, size_t threadCount, size_t taskIndex, size_t taskCount, TaskScheduler::Event* event) 
   {
     while (numActiveTasks) 
     {
@@ -221,75 +215,130 @@ namespace embree
       }
     }
   }
+#endif
 
-  template<typename List>
-  void BVH4BuilderHair::insert(size_t threadIndex, List& prims_i, List& prims_o)
+  void BVH4BuilderFull::insert(size_t threadIndex, TriRefList& prims_i, TriRefList& prims_o)
   {
-    while (List::item* block = prims_i.take()) {
+    while (TriRefList::item* block = prims_i.take()) {
       if (block->size()) prims_o.insert(block);
-      else alloc.free(threadIndex,block);
+      else allocTriRefs.free(threadIndex,block);
     }
   }
 
-  template<typename List, typename Left>
-  void BVH4BuilderHair::split(size_t threadIndex, List& prims, const Left& left, 
-                              List& lprims_o, size_t& lnum_o, 
-                              List& rprims_o, size_t& rnum_o)
+  void BVH4BuilderFull::insert(size_t threadIndex, BezierRefList& prims_i, BezierRefList& prims_o)
+  {
+    while (BezierRefList::item* block = prims_i.take()) {
+      if (block->size()) prims_o.insert(block);
+      else allocBezierRefs.free(threadIndex,block);
+    }
+  }
+
+  template<typename Left>
+  void BVH4BuilderFull::split(size_t threadIndex, 
+                              TriRefList& prims, const Left& left, 
+                              TriRefList& lprims_o, size_t& lnum_o, 
+                              TriRefList& rprims_o, size_t& rnum_o)
   {
     //lnum_o = rnum_o = 0;
-    atomic_set<PrimRefBlock>::item* lblock = lprims_o.insert(alloc.malloc(threadIndex));
-    atomic_set<PrimRefBlock>::item* rblock = rprims_o.insert(alloc.malloc(threadIndex));
+    TriRefList::item* lblock = lprims_o.insert(allocTriRefs.malloc(threadIndex));
+    TriRefList::item* rblock = rprims_o.insert(allocTriRefs.malloc(threadIndex));
     
-    while (atomic_set<PrimRefBlock>::item* block = prims.take()) 
+    while (TriRefList::item* block = prims.take()) 
     {
       for (size_t i=0; i<block->size(); i++) 
       {
-        const PrimRef& prim = block->at(i); 
+        const Triangle1v& prim = block->at(i); 
         if (left(prim)) 
         {
           lnum_o++;
           if (likely(lblock->insert(prim))) continue; 
-          lblock = lprims_o.insert(alloc.malloc(threadIndex));
+          lblock = lprims_o.insert(allocTriRefs.malloc(threadIndex));
           lblock->insert(prim);
         } 
         else 
         {
           rnum_o++;
           if (likely(rblock->insert(prim))) continue;
-          rblock = rprims_o.insert(alloc.malloc(threadIndex));
+          rblock = rprims_o.insert(allocTriRefs.malloc(threadIndex));
           rblock->insert(prim);
         }
       }
-      alloc.free(threadIndex,block);
+      allocTriRefs.free(threadIndex,block);
     }
   }
 
-  const BBox3fa BVH4BuilderHair::computeAlignedBounds(atomic_set<PrimRefBlock>& prims)
+  template<typename Left>
+  void BVH4BuilderFull::split(size_t threadIndex, 
+                              BezierRefList& prims, const Left& left, 
+                              BezierRefList& lprims_o, size_t& lnum_o, 
+                              BezierRefList& rprims_o, size_t& rnum_o)
   {
-    float area = 0.0f;
-    BBox3fa bounds = empty;
-    for (atomic_set<PrimRefBlock>::block_iterator_unsafe i = prims; i; i++)
+    //lnum_o = rnum_o = 0;
+    BezierRefList::item* lblock = lprims_o.insert(allocBezierRefs.malloc(threadIndex));
+    BezierRefList::item* rblock = rprims_o.insert(allocBezierRefs.malloc(threadIndex));
+    
+    while (BezierRefList::item* block = prims.take()) 
     {
-      const BBox3fa cbounds = i->bounds();
-      area += embree::area(cbounds);
-      bounds.extend(cbounds);
+      for (size_t i=0; i<block->size(); i++) 
+      {
+        const Bezier1& prim = block->at(i); 
+        if (left(prim)) 
+        {
+          lnum_o++;
+          if (likely(lblock->insert(prim))) continue; 
+          lblock = lprims_o.insert(allocBezierRefs.malloc(threadIndex));
+          lblock->insert(prim);
+        } 
+        else 
+        {
+          rnum_o++;
+          if (likely(rblock->insert(prim))) continue;
+          rblock = rprims_o.insert(allocBezierRefs.malloc(threadIndex));
+          rblock->insert(prim);
+        }
+      }
+      allocBezierRefs.free(threadIndex,block);
     }
-    bounds.upper.w = area;
+  }
+
+  const BBox3fa BVH4BuilderFull::computeAlignedBounds(TriRefList& tris)
+  {
+    BBox3fa bounds = empty;
+    for (TriRefList::block_iterator_unsafe i=tris; i; i++)
+      bounds.extend(i->bounds());
     return bounds;
   }
 
-  const NAABBox3fa BVH4BuilderHair::computeAlignedBounds(atomic_set<PrimRefBlock>& prims, const LinearSpace3fa& space)
+  const BBox3fa BVH4BuilderFull::computeAlignedBounds(BezierRefList& beziers)
   {
-    float area = 0.0f;
     BBox3fa bounds = empty;
-    for (atomic_set<PrimRefBlock>::block_iterator_unsafe i = prims; i; i++)
-    {
-      const BBox3fa cbounds = i->bounds(space);
-      area += embree::area(cbounds);
-      bounds.extend(cbounds);
-    }
-    bounds.upper.w = area;
+    for (BezierRefList::block_iterator_unsafe i=beziers; i; i++)
+      bounds.extend(i->bounds());
+    return bounds;
+  }
+
+  const BBox3fa BVH4BuilderFull::computeAlignedBounds(TriRefList& tris, BezierRefList& beziers) {
+    return merge(computeAlignedBounds(tris),computeAlignedBounds(beziers));
+  }
+
+  const NAABBox3fa BVH4BuilderFull::computeAlignedBounds(TriRefList& tris, const LinearSpace3fa& space)
+  {
+    BBox3fa bounds = empty;
+    for (TriRefList::block_iterator_unsafe i=tris; i; i++)
+      bounds.extend(i->bounds(space));
     return NAABBox3fa(space,bounds);
+  }
+
+  const NAABBox3fa BVH4BuilderFull::computeAlignedBounds(BezierRefList& beziers, const LinearSpace3fa& space)
+  {
+    BBox3fa bounds = empty;
+    for (BezierRefList::block_iterator_unsafe i=beziers; i; i++)
+      bounds.extend(i->bounds(space));
+    return NAABBox3fa(space,bounds);
+  }
+
+  const NAABBox3fa BVH4BuilderFull::computeAlignedBounds(TriRefList& tris, BezierRefList& beziers, const LinearSpace3fa& space) {
+    return NAABBox3fa(space,merge(computeAlignedBounds(tris,space).bounds,computeAlignedBounds(beziers,space).bounds));
   }
 
   ////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -299,7 +348,7 @@ namespace embree
   ////////////////////////////////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  __forceinline BVH4BuilderHair::ObjectSplit BVH4BuilderHair::ObjectSplit::find(size_t threadIndex, size_t depth, BVH4BuilderHair* parent, 
+  __forceinline BVH4BuilderFull::ObjectSplit BVH4BuilderFull::ObjectSplit::find(size_t threadIndex, size_t depth, BVH4BuilderFull* parent, 
                                                                                 TriRefList& tris, BezierRefList& beziers, const LinearSpace3fa& space)
   {
     /* calculate geometry and centroid bounds */
@@ -345,7 +394,7 @@ namespace embree
     }
 
     /* perform binning of bezier curves */
-    for (BezierRefList::block_iterator_unsafe i=curves; i; i++)
+    for (BezierRefList::block_iterator_unsafe i=beziers; i; i++)
     {
       const BBox3fa cbounds = i->bounds(space);
       const Vec3fa  center  = i->center(space);
@@ -435,17 +484,20 @@ namespace embree
     return split;
   }
 
-  __forceinline void BVH4BuilderHair::ObjectSplit::split(size_t threadIndex, BVH4BuilderHair* parent, 
-                                                          atomic_set<PrimRefBlock>& prims, atomic_set<PrimRefBlock>& lprims_o, atomic_set<PrimRefBlock>& rprims_o) const
+  __forceinline void BVH4BuilderFull::ObjectSplit::split(size_t threadIndex, BVH4BuilderFull* parent, 
+                                                         TriRefList& tris, BezierRefList& beziers, 
+                                                         TriRefList& ltris_o, BezierRefList& lbeziers_o,
+                                                         TriRefList& rtris_o, BezierRefList& rbeziers_o) const
   {
     size_t lnum = 0, rnum = 0;
-    parent->split(threadIndex,prims,*this,lprims_o,lnum,rprims_o,rnum);
+    parent->split(threadIndex,tris   ,*this,ltris_o   ,lnum,rtris_o   ,rnum);
+    parent->split(threadIndex,beziers,*this,lbeziers_o,lnum,rbeziers_o,rnum);
     assert(lnum == num0);
     assert(rnum == num1);
   }
   
 
-  __forceinline BVH4BuilderHair::FallBackSplit BVH4BuilderHair::FallBackSplit::find(size_t threadIndex, BVH4BuilderHair* parent, 
+  __forceinline BVH4BuilderFull::FallBackSplit BVH4BuilderFull::FallBackSplit::find(size_t threadIndex, BVH4BuilderFull* parent, 
                                                                                     TriRefList& tris,    BezierRefList& beziers, 
                                                                                     TriRefList& ltris_o, BezierRefList& lbeziers_o,
                                                                                     TriRefList& rtris_o, BezierRefList& rbeziers_o)
@@ -464,14 +516,14 @@ namespace embree
           {
             lnum++;
             if (likely(lblock->insert(prim))) continue; 
-            lblock = lprims_o.insert(parent->allocTriRefs.malloc(threadIndex));
+            lblock = ltris_o.insert(parent->allocTriRefs.malloc(threadIndex));
             lblock->insert(prim);
           } 
           else 
           {
             rnum++;
             if (likely(rblock->insert(prim))) continue;
-            rblock = rprims_o.insert(parent->allocTriRefs.malloc(threadIndex));
+            rblock = rtris_o.insert(parent->allocTriRefs.malloc(threadIndex));
             rblock->insert(prim);
           }
         }
@@ -480,10 +532,10 @@ namespace embree
     }
 
     {
-      BezierRefList::item* lblock = ltris_o.insert(parent->allocBezierRefs.malloc(threadIndex));
-      BezierRefList::item* rblock = rtris_o.insert(parent->allocBezierRefs.malloc(threadIndex));
+      BezierRefList::item* lblock = lbeziers_o.insert(parent->allocBezierRefs.malloc(threadIndex));
+      BezierRefList::item* rblock = rbeziers_o.insert(parent->allocBezierRefs.malloc(threadIndex));
     
-      while (BezierRefList::item* block = tris.take()) 
+      while (BezierRefList::item* block = beziers.take()) 
       {
         for (size_t i=0; i<block->size(); i++) 
         {
@@ -492,14 +544,14 @@ namespace embree
           {
             lnum++;
             if (likely(lblock->insert(prim))) continue; 
-            lblock = lprims_o.insert(parent->allocBezierRefs.malloc(threadIndex));
+            lblock = lbeziers_o.insert(parent->allocBezierRefs.malloc(threadIndex));
             lblock->insert(prim);
           } 
           else 
           {
             rnum++;
             if (likely(rblock->insert(prim))) continue;
-            rblock = rprims_o.insert(parent->allocBezierRefs.malloc(threadIndex));
+            rblock = rbeziers_o.insert(parent->allocBezierRefs.malloc(threadIndex));
             rblock->insert(prim);
           }
         }
@@ -518,7 +570,7 @@ namespace embree
   ////////////////////////////////////////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  BVH4::NodeRef BVH4BuilderHair::leaf(size_t threadIndex, size_t depth, TriRefList& prims, const NAABBox3fa& bounds)
+  BVH4::NodeRef BVH4BuilderFull::leaf(size_t threadIndex, size_t depth, TriRefList& prims, const NAABBox3fa& bounds)
   {
     //size_t N = end-begin;
     size_t N = bvh->primTy[0]->blocks(TriRefList::block_iterator_unsafe(prims).size());
@@ -534,17 +586,19 @@ namespace embree
 
     if (bvh->primTy[0] == &SceneTriangle4::type) 
     {
-      atomic_set<PrimRefBlock>::block_iterator_unsafe iter(prims);
+      char* leaf = bvh->allocPrimitiveBlocks(threadIndex,0,N);
+
+      TriRefList::block_iterator_unsafe iter(prims);
       for (size_t j=0; j<N; j++) 
       {
-        void* This = leaf+j*bvh->primTy[0].bytes;
+        void* This = leaf+j*bvh->primTy[0]->bytes;
     
         ssei geomID = -1, primID = -1, mask = -1;
         sse3f v0 = zero, v1 = zero, v2 = zero;
     
-        for (size_t i=0; i<4 && prims; i++, prims++)
+        for (size_t i=0; i<4 && iter; i++, iter++)
         {
-          const PrimRef& prim = *prims;
+          const Triangle1v& prim = *iter;
           const TriangleMesh* mesh = scene->getTriangleMesh(prim.geomID());
           const TriangleMesh::Triangle& tri = mesh->triangle(prim.primID());
           const Vec3fa& p0 = mesh->vertex(tri.v[0]);
@@ -562,19 +616,19 @@ namespace embree
       assert(!iter);
     
       /* free all primitive blocks */
-      while (atomic_set<PrimRefBlock>::item* block = prims.take())
-        alloc.free(threadIndex,block);
+      while (TriRefList::item* block = prims.take())
+        allocTriRefs.free(threadIndex,block);
         
-      return bvh->encodeLeaf(leaf,blocks,0);
+      return bvh->encodeLeaf(leaf,N,0);
     } 
     else 
       throw std::runtime_error("unknown primitive type");
   }
 
-  BVH4::NodeRef BVH4BuilderHair::leaf(size_t threadIndex, size_t depth, BezierRefList& prims, const NAABBox3fa& bounds)
+  BVH4::NodeRef BVH4BuilderFull::leaf(size_t threadIndex, size_t depth, BezierRefList& prims, const NAABBox3fa& bounds)
   {
     //size_t N = end-begin;
-    size_t N = TriRefList::block_iterator_unsafe(prims).size();
+    size_t N = BezierRefList::block_iterator_unsafe(prims).size();
 
     if (N > (size_t)BVH4::maxLeafBlocks) {
       //std::cout << "WARNING: Loosing " << N-BVH4::maxLeafBlocks << " primitives during build!" << std::endl;
@@ -586,19 +640,19 @@ namespace embree
     //assert(N <= (size_t)BVH4::maxLeafBlocks);
     if (bvh->primTy[1] == &Bezier1Type::type) { 
       Bezier1* leaf = (Bezier1*) bvh->allocPrimitiveBlocks(threadIndex,0,N);
-      atomic_set<PrimRefBlock>::block_iterator_unsafe iter(prims);
+      BezierRefList::block_iterator_unsafe iter(prims);
       for (size_t i=0; i<N; i++) { leaf[i] = *iter; iter++; }
       assert(!iter);
 
       /* free all primitive blocks */
-      while (atomic_set<PrimRefBlock>::item* block = prims.take())
-        alloc.free(threadIndex,block);
+      while (BezierRefList::item* block = prims.take())
+        allocBezierRefs.free(threadIndex,block);
 
       return bvh->encodeLeaf((char*)leaf,N,1);
     } 
     else if (bvh->primTy[1] == &SceneBezier1i::type) {
       Bezier1i* leaf = (Bezier1i*) bvh->allocPrimitiveBlocks(threadIndex,0,N);
-      atomic_set<PrimRefBlock>::block_iterator_unsafe iter(prims);
+      BezierRefList::block_iterator_unsafe iter(prims);
       for (size_t i=0; i<N; i++) {
         const Bezier1& curve = *iter; iter++;
         const BezierCurves* in = (BezierCurves*) scene->get(curve.geomID);
@@ -607,8 +661,8 @@ namespace embree
       }
 
       /* free all primitive blocks */
-      while (atomic_set<PrimRefBlock>::item* block = prims.take())
-        alloc.free(threadIndex,block);
+      while (BezierRefList::item* block = prims.take())
+        allocBezierRefs.free(threadIndex,block);
 
       return bvh->encodeLeaf((char*)leaf,N,1);
     }
@@ -616,7 +670,7 @@ namespace embree
       throw std::runtime_error("unknown primitive type");
   }
 
-  BVH4::NodeRef BVH4BuilderHair::leaf(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const NAABBox3fa& bounds)
+  BVH4::NodeRef BVH4BuilderFull::leaf(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const NAABBox3fa& bounds)
   {
     size_t Ntris    = TriRefList   ::block_iterator_unsafe(tris   ).size();
     size_t Nbeziers = BezierRefList::block_iterator_unsafe(beziers).size();
@@ -626,12 +680,12 @@ namespace embree
       return leaf(threadIndex,depth,tris,bounds);
     
     BVH4::UANode* node = bvh->allocUANode(threadIndex);
-    node->set(0,computeAlignedBounds(tris   ).bounds,leaf(threadIndex,depth+1,tris   ,bounds));
-    node->set(1,computeAlignedBounds(beziers).bounds,leaf(threadIndex,depth+1,beziers,bounds));
+    node->set(0,computeAlignedBounds(tris   ),leaf(threadIndex,depth+1,tris   ,bounds));
+    node->set(1,computeAlignedBounds(beziers),leaf(threadIndex,depth+1,beziers,bounds));
     return bvh->encodeNode(node);
   }
 
-  bool BVH4BuilderHair::split(size_t threadIndex, size_t depth, 
+  bool BVH4BuilderFull::split(size_t threadIndex, size_t depth, 
                               TriRefList& tris,    BezierRefList& beziers, const NAABBox3fa& bounds, size_t size,
                               TriRefList& ltris_o, BezierRefList& lbeziers_o, size_t& lsize,
                               TriRefList& rtris_o, BezierRefList& rbeziers_o, size_t& rsize,
@@ -650,7 +704,7 @@ namespace embree
 
     /* perform fallback split */
     if (bestSAH == float(inf)) {
-      if (N <= maxLeafSize) return false;
+      if (size <= maxLeafSize) return false;
       numFallbackSplits++;
       const FallBackSplit fallbackSplit = FallBackSplit::find(threadIndex,this,tris,beziers,ltris_o,lbeziers_o,rtris_o,rbeziers_o);
       lsize = fallbackSplit.num0;
@@ -673,11 +727,11 @@ namespace embree
     }
   }
 
-  void BVH4BuilderHair::processTask(size_t threadIndex, BuildTask& task, BuildTask task_o[BVH4::N], size_t& numTasks_o)
+  void BVH4BuilderFull::processTask(size_t threadIndex, BuildTask& task, BuildTask task_o[BVH4::N], size_t& numTasks_o)
   {
     /* create enforced leaf */
     if (task.size <= minLeafSize || task.depth >= BVH4::maxBuildDepth || task.makeleaf) {
-      *task.dst = leaf(threadIndex,task.depth,task.prims,task.bounds);
+      *task.dst = leaf(threadIndex,task.depth,task.tris,task.beziers,task.bounds);
       numTasks_o = 0;
       return;
     }
@@ -685,10 +739,12 @@ namespace embree
     /*! initialize child list */
     bool isAligned = true;
     NAABBox3fa cbounds[BVH4::N];
-    atomic_set<PrimRefBlock> cprims[BVH4::N];
+    TriRefList ctris[BVH4::N];
+    BezierRefList cbeziers[BVH4::N];
     size_t csize[BVH4::N];
     bool isleaf[BVH4::N];
-    cprims[0] = task.prims;
+    ctris[0] = task.tris;
+    cbeziers[0] = task.beziers;
     cbounds[0] = task.bounds;
     csize[0] = task.size;
     isleaf[0] = false;
@@ -724,6 +780,8 @@ namespace embree
 
       //cbounds[numChildren] = computeUnalignedBounds(cprims[numChildren]);
       //cbounds[bestChild  ] = computeUnalignedBounds(cprims[bestChild  ]);
+      cbounds[numChildren] = computeAlignedBounds(ctris[numChildren],cbeziers[numChildren]);
+      cbounds[bestChild  ] = computeAlignedBounds(ctris[bestChild  ],cbeziers[bestChild  ]);
       numChildren++;
       
     } while (numChildren < BVH4::N);
@@ -742,8 +800,9 @@ namespace embree
 
       for (ssize_t i=0; i<numChildren; i++) {
         node->set(i,abounds[i].bounds);
-	const NAABBox3fa ubounds = computeUnalignedBounds(cprims[i]);
-        new (&task_o[i]) BuildTask(&node->child(i),task.depth+1,csize[i],isleaf[i],cprims[i],ubounds);
+	//const NAABBox3fa ubounds = computeUnalignedBounds(cprims[i]);
+        const NAABBox3fa ubounds = computeAlignedBounds(ctris[i],cbeziers[i]);
+        new (&task_o[i]) BuildTask(&node->child(i),task.depth+1,csize[i],isleaf[i],ctris[i],cbeziers[i],ubounds);
       }
       numTasks_o = numChildren;
       *task.dst = bvh->encodeNode(node);
@@ -762,7 +821,7 @@ namespace embree
       }*/
   }
 
-  void BVH4BuilderHair::recurseTask(size_t threadIndex, BuildTask& task)
+  void BVH4BuilderFull::recurseTask(size_t threadIndex, BuildTask& task)
   {
     size_t numChildren;
     BuildTask tasks[BVH4::N];
@@ -771,7 +830,7 @@ namespace embree
       recurseTask(threadIndex,tasks[i]);
   }
 
-  Builder* BVH4BuilderHair_ (BVH4* accel, Scene* scene) {
-    return new BVH4BuilderHair(accel,scene);
+  Builder* BVH4BuilderFull_ (BVH4* accel, Scene* scene) {
+    return new BVH4BuilderFull(accel,scene);
   }
 }
