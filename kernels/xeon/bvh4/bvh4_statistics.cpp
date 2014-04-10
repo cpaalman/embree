@@ -20,7 +20,8 @@ namespace embree
 {
   BVH4Statistics::BVH4Statistics (BVH4* bvh) : bvh(bvh)
   {
-    numNodes = numLeaves = numPrimBlocks = numPrims = depth = 0;
+    numNodes = depth = 0;
+    for (size_t i=0; i<4; i++) numLeaves[i] = numPrimBlocks[i] = numPrims[i] = 0;
     bvhSAH = leafSAH = 0.0f;
     statistics(bvh->root,bvh->bounds,depth);
     bvhSAH /= area(bvh->bounds);
@@ -31,20 +32,31 @@ namespace embree
   size_t BVH4Statistics::bytesUsed()
   {
     size_t bytesNodes = numNodes*sizeof(Node);
-    size_t bytesTris  = numPrimBlocks*bvh->primTy.bytes;
+    size_t bytesPrims = 0;
+    for (size_t i=0; i<4; i++)
+      bytesPrims += numPrimBlocks[i]*(bvh->primTy[i] ? bvh->primTy[i]->bytes : 0);
     size_t numVertices = bvh->numVertices;
     size_t bytesVertices = numVertices*sizeof(Vec3fa); 
-    return bytesNodes+bytesTris+bytesVertices;
+    return bytesNodes+bytesPrims+bytesVertices;
   }
 
   std::string BVH4Statistics::str()  
   {
     std::ostringstream stream;
     size_t bytesNodes = numNodes*sizeof(Node);
-    size_t bytesTris  = numPrimBlocks*bvh->primTy.bytes;
+    size_t bytesPrim[4]; memset(bytesPrim,0,sizeof(bytesPrim));
+    size_t bytesPrims = 0;
+    size_t numLeavesTotal = 0;
+    for (size_t i=0; i<4; i++) {
+      bytesPrim[i] = 0;
+      numLeavesTotal += numLeaves[i];
+      if (bvh->primTy[i] == 0) continue;
+      bytesPrim[i] = numPrimBlocks[i]*bvh->primTy[i]->bytes;
+      bytesPrims += bytesPrim[i];
+    }
     size_t numVertices = bvh->numVertices;
     size_t bytesVertices = numVertices*sizeof(Vec3fa); 
-    size_t bytesTotal = bytesNodes+bytesTris+bytesVertices;
+    size_t bytesTotal = bytesNodes+bytesPrims+bytesVertices;
     size_t bytesTotalAllocated = bvh->bytesAllocated();
     if (g_benchmark) std::cout << "BENCHMARK_TRIANGLE_ACCEL " << bvhSAH << " " << bytesTotal << std::endl;
     stream.setf(std::ios::fixed, std::ios::floatfield);
@@ -59,13 +71,16 @@ namespace embree
     stream << "  nodes = "  << numNodes << " "
            << "(" << bytesNodes/1E6  << " MB) "
            << "(" << 100.0*double(bytesNodes)/double(bytesTotal) << "% of total) "
-           << "(" << 100.0*(numNodes-1+numLeaves)/(BVH4::N*numNodes) << "% used)" 
+           << "(" << 100.0*(numNodes-1+numLeavesTotal)/(BVH4::N*numNodes) << "% used)" 
            << std::endl;
-    stream << "  leaves = " << numLeaves << " "
-           << "(" << bytesTris/1E6  << " MB) "
-           << "(" << 100.0*double(bytesTris)/double(bytesTotal) << "% of total) "
-           << "(" << 100.0*double(numPrims)/double(bvh->primTy.blockSize*numPrimBlocks) << "% used)" 
-           << std::endl;
+    for (size_t i=0; i<4; i++) {
+      if (!bvh->primTy[i]) continue;
+      stream << "  " << bvh->primTy[i]->name << " leaves = " << numLeaves[i] << " "
+             << "(" << bytesPrim[i]/1E6  << " MB) "
+             << "(" << 100.0*double(bytesPrim[i])/double(bytesTotal) << "% of total) "
+             << "(" << 100.0*double(numPrims[i])/double(bvh->primTy[i]->blockSize*numPrimBlocks[i]) << "% used)" 
+             << std::endl;
+    }
     stream << "  vertices = " << numVertices << " "
            << "(" << bytesVertices/1E6 << " MB) " 
            << "(" << 100.0*double(bytesVertices)/double(bytesTotal) << "% of total) "
@@ -104,15 +119,16 @@ namespace embree
     else
     {
       depth = 0;
-      size_t num,ty; const char* tri = node.getLeaf(num,ty); // FIXME: properly handle leaf types
+      size_t num,ty; const char* tri = node.getLeaf(num,ty);
       if (!num) return;
+      if (ty >= 4) throw std::runtime_error("invalid leaf type");
       
-      numLeaves++;
-      numPrimBlocks += num;
+      numLeaves[ty]++;
+      numPrimBlocks[ty] += num;
       for (size_t i=0; i<num; i++) {
-        numPrims += bvh->primTy.size(tri+i*bvh->primTy.bytes);
+        numPrims[ty] += bvh->primTy[ty]->size(tri+i*bvh->primTy[ty]->bytes);
       }
-      float sah = A * bvh->primTy.intCost * num;
+      float sah = A * bvh->primTy[ty]->intCost * num;
       bvhSAH += sah;
       leafSAH += sah;
     }

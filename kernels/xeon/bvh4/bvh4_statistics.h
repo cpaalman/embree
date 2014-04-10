@@ -42,11 +42,11 @@ namespace embree
   private:
     BVH4* bvh;
     float bvhSAH;                      //!< SAH cost of the BVH4.
-    float leafSAH;                      //!< SAH cost of the BVH4.
+    float leafSAH;                     //!< SAH cost of the BVH4.
     size_t numNodes;                   //!< Number of internal nodes.
-    size_t numLeaves;                  //!< Number of leaf nodes.
-    size_t numPrimBlocks;              //!< Number of primitive blocks.
-    size_t numPrims;                   //!< Number of primitives.
+    size_t numLeaves[4];               //!< Number of leaf nodes.
+    size_t numPrimBlocks[4];           //!< Number of primitive blocks.
+    size_t numPrims[4];                //!< Number of primitives.
     size_t depth;                      //!< Depth of the tree.
   };
 }

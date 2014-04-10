@@ -29,6 +29,8 @@
 
 namespace embree
 {
+  DECLARE_SYMBOL(Accel::Intersector1,BVH4Triangle4Bezier1Intersector1);
+
   DECLARE_SYMBOL(Accel::Intersector1,BVH4Bezier1Intersector1);
   DECLARE_SYMBOL(Accel::Intersector1,BVH4Bezier1iIntersector1);
 
@@ -96,6 +98,7 @@ namespace embree
     SELECT_SYMBOL_DEFAULT(features,BVH4BuilderRefitObjectSplit4TriangleMeshFast);
 
     /* select intersectors1 */
+    SELECT_SYMBOL_AVX_AVX2              (features,BVH4Triangle4Bezier1Intersector1);
     SELECT_SYMBOL_AVX_AVX2              (features,BVH4Bezier1iIntersector1);
     SELECT_SYMBOL_DEFAULT_SSE41_AVX_AVX2(features,BVH4Triangle1Intersector1Moeller);
     SELECT_SYMBOL_DEFAULT_SSE41_AVX_AVX2(features,BVH4Triangle4Intersector1Moeller);
@@ -130,11 +133,30 @@ namespace embree
     SELECT_SYMBOL_AVX_AVX2(features,BVH4VirtualIntersector8Chunk);
   }
 
-  BVH4::BVH4 (const PrimitiveType& primTy, void* geometry)
-  : primTy(primTy), geometry(geometry), root(emptyNode),
-    numPrimitives(0), numVertices(0),
-    nodes(NULL), bytesNodes(0), primitives(NULL), bytesPrimitives(0) 
+  BVH4::BVH4 (const PrimitiveType& primTy0, void* geometry)
+    : geometry(geometry), root(emptyNode), numPrimitives(0), numVertices(0), nodes(NULL), bytesNodes(0), primitives(NULL), bytesPrimitives(0) 
   {
+    for (size_t i=0; i<4; i++) primTy[i] = NULL;
+    primTy[0] = &primTy0;
+    alloc = new LinearAllocatorPerThread;
+  }
+
+  BVH4::BVH4 (const PrimitiveType& primTy0, const PrimitiveType& primTy1, void* geometry)
+    : geometry(geometry), root(emptyNode), numPrimitives(0), numVertices(0), nodes(NULL), bytesNodes(0), primitives(NULL), bytesPrimitives(0) 
+  {
+    for (size_t i=0; i<4; i++) primTy[i] = NULL;
+    primTy[0] = &primTy0;
+    primTy[1] = &primTy1;
+    alloc = new LinearAllocatorPerThread;
+  }
+
+  BVH4::BVH4 (const PrimitiveType& primTy0, const PrimitiveType& primTy1, const PrimitiveType& primTy2, void* geometry)
+    : geometry(geometry), root(emptyNode), numPrimitives(0), numVertices(0), nodes(NULL), bytesNodes(0), primitives(NULL), bytesPrimitives(0) 
+  {
+    for (size_t i=0; i<4; i++) primTy[i] = NULL;
+    primTy[0] = &primTy0;
+    primTy[1] = &primTy1;
+    primTy[2] = &primTy2;
     alloc = new LinearAllocatorPerThread;
   }
 
@@ -142,6 +164,17 @@ namespace embree
     if (nodes) os_free(nodes, bytesNodes);
     if (primitives) os_free(primitives, bytesPrimitives);
     for (size_t i=0; i<objects.size(); i++) delete objects[i];
+  }
+
+  Accel::Intersectors BVH4Triangle4Bezier1Intersectors(BVH4* bvh)
+  {
+    Accel::Intersectors intersectors;
+    intersectors.ptr = bvh;
+    intersectors.intersector1 = BVH4Triangle4Bezier1Intersector1;
+    intersectors.intersector4 = NULL;
+    intersectors.intersector8 = NULL;
+    intersectors.intersector16 = NULL;
+    return intersectors;
   }
 
   Accel::Intersectors BVH4Bezier1Intersectors(BVH4* bvh)
@@ -263,6 +296,18 @@ namespace embree
     intersectors.intersector8 = BVH4Triangle4iIntersector8ChunkPluecker;
     intersectors.intersector16 = NULL;
     return intersectors;
+  }
+
+  Accel* BVH4::BVH4Triangle4Bezier1(Scene* scene)
+  { 
+    BVH4* accel = new BVH4(SceneTriangle4::type,Bezier1Type::type,scene);
+    Accel::Intersectors intersectors = BVH4Triangle4Bezier1Intersectors(accel);
+
+    Builder* builder = NULL;
+    if      (g_builder == "default") builder = BVH4BuilderObjectSplit4(accel,&scene->flat_triangle_source_1,scene,1,inf);
+    else if (g_builder == "hair"   ) builder = BVH4BuilderHair_(accel,scene);
+    else throw std::runtime_error("unknown hair builder");
+    return new AccelInstance(accel,builder,intersectors);
   }
 
   Accel* BVH4::BVH4Bezier1(Scene* scene)
@@ -625,7 +670,7 @@ namespace embree
     /* allocate as much memory as likely needed and reserve conservative amounts of memory */
     size_t blockSize = LinearAllocatorPerThread::allocBlockSize;
     
-    size_t numPrimBlocks = primTy.blocks(numPrimitives);
+    size_t numPrimBlocks = primTy[0]->blocks(numPrimitives); // FIXME: support multiple prim types
     size_t numAllocatedNodes = min(size_t(0.6*numPrimBlocks),numPrimitives);
     size_t numAllocatedPrimitives = min(size_t(1.2*numPrimBlocks),numPrimitives);
 #if defined(__X86_64__)
@@ -637,7 +682,7 @@ namespace embree
 #endif
     
     size_t bytesAllocated = 0; //numAllocatedNodes * sizeof(BVH4::Node) + numAllocatedPrimitives * primTy.bytes;
-    size_t bytesReserved  = numReservedNodes * sizeof(BVH4::Node) + numReservedPrimitives * primTy.bytes;
+    size_t bytesReserved  = numReservedNodes * sizeof(BVH4::Node) + numReservedPrimitives * primTy[0]->bytes; // FIXME: support multiple prim types
     bytesReserved         = (bytesReserved+blockSize-1)/blockSize*blockSize;
 
     root = emptyNode;

@@ -48,35 +48,35 @@ namespace embree
       needAllThreads = true;
       if (mesh) needAllThreads = mesh->numTriangles > 50000;
       
-      if (&bvh->primTy == &SceneTriangle1::type) {
+      if (bvh->primTy[0] == &SceneTriangle1::type) {
         createSmallLeaf = createTriangle1Leaf;
         leafBounds = leafBoundsTriangle1;
       }
-      else if (&bvh->primTy == &SceneTriangle4::type) {
+      else if (bvh->primTy[0] == &SceneTriangle4::type) {
         createSmallLeaf = createTriangle4Leaf;
         leafBounds = leafBoundsTriangle4;
       }
-      else if (&bvh->primTy == &SceneTriangle1v::type) {
+      else if (bvh->primTy[0] == &SceneTriangle1v::type) {
         createSmallLeaf = createTriangle1vLeaf;
         leafBounds = leafBoundsTriangle1v;
       }
-      else if (&bvh->primTy == &SceneTriangle4v::type) {
+      else if (bvh->primTy[0] == &SceneTriangle4v::type) {
         createSmallLeaf = createTriangle4vLeaf;
         leafBounds = leafBoundsTriangle4v;
       }
-      else if (&bvh->primTy == &TriangleMeshTriangle1::type) {
+      else if (bvh->primTy[0] == &TriangleMeshTriangle1::type) {
         createSmallLeaf = createTriangle1Leaf;
         leafBounds = leafBoundsTriangle1;
       }
-      else if (&bvh->primTy == &TriangleMeshTriangle4::type) {
+      else if (bvh->primTy[0] == &TriangleMeshTriangle4::type) {
         createSmallLeaf = createTriangle4Leaf;
         leafBounds = leafBoundsTriangle4;
       }
-      else if (&bvh->primTy == &TriangleMeshTriangle1v::type) {
+      else if (bvh->primTy[0] == &TriangleMeshTriangle1v::type) {
         createSmallLeaf = createTriangle1vLeaf;
         leafBounds = leafBoundsTriangle1v;
       }
-      else if (&bvh->primTy == &TriangleMeshTriangle4v::type) {
+      else if (bvh->primTy[0] == &TriangleMeshTriangle4v::type) {
         createSmallLeaf = createTriangle4vLeaf;
         leafBounds = leafBoundsTriangle4v;
       }
@@ -173,7 +173,7 @@ namespace embree
         }
       }
       bvh->numPrimitives = numPrimitives;
-      if (bvh->primTy.needVertices) bvh->numVertices = numVertices;
+      if (bvh->primTy[0]->needVertices) bvh->numVertices = numVertices;
       else                          bvh->numVertices = 0;
       
       size_t maxPrimsPerGroup = 0;
@@ -215,7 +215,7 @@ namespace embree
         if (needAllThreads) additionalBlocks = threadCount;
         
         /* allocate as much memory as likely needed and reserve conservative amounts of memory */
-        size_t numPrimBlocks = bvh->primTy.blocks(numPrimitives);
+        size_t numPrimBlocks = bvh->primTy[0]->blocks(numPrimitives);
         size_t numAllocatedNodes = min(size_t(0.6*numPrimBlocks),numPrimitives);
         size_t numAllocatedPrimitives = min(size_t(1.2*numPrimBlocks),numPrimitives);
 #if defined(__X86_64__)
@@ -227,9 +227,9 @@ namespace embree
 #endif
         bytesMorton = ((numPrimitives+7)&(-8)) * sizeof(MortonID32Bit);
         size_t bytesAllocatedNodes      = numAllocatedNodes * sizeof(BVH4::Node);
-        size_t bytesAllocatedPrimitives = numAllocatedPrimitives * bvh->primTy.bytes;
+        size_t bytesAllocatedPrimitives = numAllocatedPrimitives * bvh->primTy[0]->bytes;
         size_t bytesReservedNodes       = numReservedNodes * sizeof(BVH4::Node);
-        size_t bytesReservedPrimitives  = numReservedPrimitives * bvh->primTy.bytes;
+        size_t bytesReservedPrimitives  = numReservedPrimitives * bvh->primTy[0]->bytes;
         size_t blocksReservedNodes      = (bytesReservedNodes     +Allocator::blockSize-1)/Allocator::blockSize;
         size_t blocksReservedPrimitives = (bytesReservedPrimitives+Allocator::blockSize-1)/Allocator::blockSize;
         bytesReservedNodes      = Allocator::blockSize*(blocksReservedNodes      + additionalBlocks);

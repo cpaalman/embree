@@ -102,7 +102,7 @@ namespace embree
       PRINT(enableStrandSplits);
       PRINT(enablePreSubdivision);
 
-      std::cout << "building BVH4<" + bvh->primTy.name + "> using BVH4BuilderHair ..." << std::flush;
+      std::cout << "building " << bvh->name() + " using BVH4BuilderHair ..." << std::flush;
       t0 = getSeconds();
     }
 
@@ -133,7 +133,7 @@ namespace embree
 
     bvh->numPrimitives = scene->numCurves;
     bvh->numVertices = 0;
-    if (&bvh->primTy == &SceneBezier1i::type) bvh->numVertices = numVertices;
+    if (bvh->primTy[0] == &SceneBezier1i::type) bvh->numVertices = numVertices;
 
     /* start recursive build */
     remainingReplications = g_hair_builder_replication_factor*numPrimitives;
@@ -867,8 +867,8 @@ namespace embree
     size_t numGeneratedPrimsOld = atomic_add(&numGeneratedPrims,N); 
     if (numGeneratedPrimsOld%10000 > (numGeneratedPrimsOld+N)%10000) std::cout << "." << std::flush; 
     //assert(N <= (size_t)BVH4::maxLeafBlocks);
-    if (&bvh->primTy == &Bezier1Type::type) {
-      Bezier1* leaf = (Bezier1*) bvh->allocPrimitiveBlocks(threadIndex,N);
+    if (bvh->primTy[0] == &Bezier1Type::type) { 
+      Bezier1* leaf = (Bezier1*) bvh->allocPrimitiveBlocks(threadIndex,0,N);
       atomic_set<PrimRefBlock>::block_iterator_unsafe iter(prims);
       for (size_t i=0; i<N; i++) { leaf[i] = *iter; iter++; }
       assert(!iter);
@@ -879,8 +879,8 @@ namespace embree
 
       return bvh->encodeLeaf((char*)leaf,N,0);
     } 
-    else if (&bvh->primTy == &SceneBezier1i::type) {
-      Bezier1i* leaf = (Bezier1i*) bvh->allocPrimitiveBlocks(threadIndex,N);
+    else if (bvh->primTy[0] == &SceneBezier1i::type) {
+      Bezier1i* leaf = (Bezier1i*) bvh->allocPrimitiveBlocks(threadIndex,0,N);
       atomic_set<PrimRefBlock>::block_iterator_unsafe iter(prims);
       for (size_t i=0; i<N; i++) {
         const Bezier1& curve = *iter; iter++;

@@ -16,6 +16,7 @@
 
 #include "bvh4_intersector1_full.h"
 
+#include "geometry/select_intersector1.h"
 #include "geometry/triangle4_intersector1_moeller.h"
 
 #if defined(__AVX__)
@@ -447,6 +448,9 @@ namespace embree
     //DEFINE_INTERSECTOR1(BVH4Triangle4Intersector1Moeller,BVH4Intersector1Full<Triangle4Intersector1MoellerTrumbore>);
 
 #if defined(__AVX__)
+    typedef Select2Intersector1<Triangle4Intersector1MoellerTrumbore, Bezier1Intersector1> Triangle4Bezier1Intersector1;
+    DEFINE_INTERSECTOR1(BVH4Triangle4Bezier1Intersector1,BVH4Intersector1Full<Triangle4Bezier1Intersector1>);
+
     DEFINE_INTERSECTOR1(BVH4Bezier1Intersector1,BVH4Intersector1Full<Bezier1Intersector1>);
     DEFINE_INTERSECTOR1(BVH4Bezier1iIntersector1,BVH4Intersector1Full<Bezier1iIntersector1>);
 #endif

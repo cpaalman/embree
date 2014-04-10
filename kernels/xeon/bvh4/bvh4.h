@@ -557,12 +557,28 @@ namespace embree
   public:
 
     /*! BVH4 default constructor. */
-    BVH4 (const PrimitiveType& primTy, void* geometry = NULL);
+    BVH4 (const PrimitiveType& primTy0, void* geometry = NULL);
+    BVH4 (const PrimitiveType& primTy0, const PrimitiveType& primTy1, void* geometry = NULL);
+    BVH4 (const PrimitiveType& primTy0, const PrimitiveType& primTy1, const PrimitiveType& primTy2, void* geometry = NULL);
 
     /*! BVH4 destruction */
     ~BVH4 ();
 
+    /*! returns name of BVH */
+    std::string name() const {
+      std::string str = "BVH4<";
+      if (primTy[0]) str += primTy[0]->name;
+      for (size_t i=1; i<4; i++) {
+        str += ",";
+        if (primTy[i]) str += primTy[i]->name;
+      }
+      str+= ">";
+      return str;
+    }
+
     /*! BVH4 instantiations */
+    static Accel* BVH4Triangle4Bezier1(Scene* scene);
+
     static Accel* BVH4Bezier1   (Scene* scene);
     static Accel* BVH4Bezier1i  (Scene* scene);
     static Accel* BVH4Triangle1(Scene* scene);
@@ -618,8 +634,8 @@ namespace embree
       CUNode* node = (CUNode*) alloc->malloc(thread,sizeof(CUNode),alignment); node->clear(); return node;
     }
 
-    __forceinline char* allocPrimitiveBlocks(size_t thread, size_t num) {
-      return (char*) alloc->malloc(thread,num*primTy.bytes,alignment);
+    __forceinline char* allocPrimitiveBlocks(size_t thread, size_t ty, size_t num) {
+      return (char*) alloc->malloc(thread,num*primTy[ty]->bytes,alignment);
     }
 
     /*! Encodes a node */
@@ -647,7 +663,7 @@ namespace embree
     }
 
   public:
-    const PrimitiveType& primTy;       //!< primitive type stored in the BVH
+    const PrimitiveType* primTy[4];    //!< primitive types stored in the BVH
     void* geometry;                    //!< pointer to additional data for primitive intersector
     NodeRef root;                      //!< Root node
     size_t numPrimitives;

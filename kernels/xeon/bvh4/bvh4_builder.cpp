@@ -44,7 +44,7 @@ namespace embree
 #endif
 
     if (g_verbose >= 2) 
-      std::cout << "building BVH4<" << bvh->primTy.name << "> with " << Heuristic::name() << " SAH builder ... " << std::flush;
+      std::cout << "building " + bvh->name() + " with " << Heuristic::name() << " SAH builder ... " << std::flush;
 
     double t0 = 0.0, t1 = 0.0f;
     if (g_verbose >= 2 || g_benchmark)
@@ -88,7 +88,7 @@ namespace embree
 
   template<typename Heuristic>
   BVH4Builder<Heuristic>::BVH4Builder (BVH4* bvh, BuildSource* source, void* geometry, const size_t minLeafSize, const size_t maxLeafSize)
-    : source(source), geometry(geometry), primTy(bvh->primTy), minLeafSize(minLeafSize), maxLeafSize(maxLeafSize), bvh(bvh),
+    : source(source), geometry(geometry), primTy(*bvh->primTy[0]), minLeafSize(minLeafSize), maxLeafSize(maxLeafSize), bvh(bvh),
       taskQueue(Heuristic::depthFirst ? TaskScheduler::GLOBAL_BACK : TaskScheduler::GLOBAL_FRONT)
   {
     size_t maxLeafPrims = BVH4::maxLeafBlocks*primTy.blockSize;
@@ -106,7 +106,7 @@ namespace embree
   {
     /* allocate leaf node */
     size_t blocks = primTy.blocks(pinfo.size());
-    char* leaf = bvh->allocPrimitiveBlocks(threadIndex,blocks);
+    char* leaf = bvh->allocPrimitiveBlocks(threadIndex,0,blocks);
     assert(blocks <= (size_t)BVH4::maxLeafBlocks);
 
     /* insert all triangles */

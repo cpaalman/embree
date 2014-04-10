@@ -184,6 +184,7 @@ namespace embree
 #if !defined(__WIN32__) && defined (__TARGET_AVX__)
       else if (g_tri_accel == "bvh8i.triangle8")        accels.add(BVH8i::BVH8iTriangle8(this));
 #endif
+      else if (g_tri_accel == "bvh4.triangle4_bezier1")    accels.add(BVH4::BVH4Triangle4Bezier1(this));
       else throw std::runtime_error("unknown triangle acceleration structure "+g_tri_accel);
 
       accels.add(new TwoLevelAccel("default",this));

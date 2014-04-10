@@ -118,7 +118,7 @@ namespace embree
       
       double t0 = 0.0;
       if (g_verbose >= 2) {
-        std::cout << "building BVH4<" << bvh->primTy.name << "> with toplevel SAH builder ... " << std::flush;
+        std::cout << "building " + bvh->name() + " with toplevel SAH builder ... " << std::flush;
         t0 = getSeconds();
       }
       

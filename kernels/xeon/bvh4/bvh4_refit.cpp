@@ -36,7 +36,7 @@ namespace embree
     }
     
     BVH4Refit::BVH4Refit (BVH4* bvh, Builder* builder, TriangleMesh* mesh)
-    : builder(builder), mesh(mesh), primTy(bvh->primTy), bvh(bvh) 
+      : builder(builder), mesh(mesh), primTy(*bvh->primTy[0]), bvh(bvh)  // FIXME: support multiple prim types
     {
       needAllThreads = builder->needAllThreads;
     }
@@ -63,7 +63,7 @@ namespace embree
       /* refit BVH */
       double t0 = 0.0;
       if (g_verbose >= 2) {
-        std::cout << "refitting BVH4 <" << bvh->primTy.name << "> ... " << std::flush;
+        std::cout << "refitting " + bvh->name() + " ... " << std::flush;
         t0 = getSeconds();
       }
       
@@ -136,7 +136,7 @@ namespace embree
     {
       size_t num,ty; char* tri = ref.getLeaf(num,ty);
       if (unlikely(num == 0)) return empty;
-      return bvh->primTy.update(tri,num,mesh);
+      return bvh->primTy[0]->update(tri,num,mesh); // FIXME: support multiple prim types
     }
     
     __forceinline BBox3fa BVH4Refit::node_bounds(NodeRef& ref)

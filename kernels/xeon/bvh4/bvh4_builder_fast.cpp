@@ -44,19 +44,19 @@ namespace embree
     std::auto_ptr<BVH4BuilderFast::GlobalState> BVH4BuilderFast::g_state(NULL);
     
     BVH4BuilderFast::BVH4BuilderFast (BVH4* bvh, BuildSource* source, Scene* scene, TriangleMesh* mesh, const size_t minLeafSize, const size_t maxLeafSize)
-    : source(source), scene(scene), mesh(mesh), primTy(bvh->primTy), bvh(bvh), numGroups(0), numPrimitives(0), prims(NULL), bytesPrims(0), createSmallLeaf(NULL)
+    : source(source), scene(scene), mesh(mesh), primTy(*bvh->primTy[0]), bvh(bvh), numGroups(0), numPrimitives(0), prims(NULL), bytesPrims(0), createSmallLeaf(NULL)
     {
       needAllThreads = true;
       if (mesh) needAllThreads = mesh->numTriangles > 50000;
 
-      if      (&bvh->primTy == &SceneTriangle1::type ) createSmallLeaf = createTriangle1Leaf;
-      else if (&bvh->primTy == &SceneTriangle4::type ) createSmallLeaf = createTriangle4Leaf;
-      else if (&bvh->primTy == &SceneTriangle1v::type) createSmallLeaf = createTriangle1vLeaf;
-      else if (&bvh->primTy == &SceneTriangle4v::type) createSmallLeaf = createTriangle4vLeaf;
-      else if (&bvh->primTy == &TriangleMeshTriangle1::type ) createSmallLeaf = createTriangle1Leaf;
-      else if (&bvh->primTy == &TriangleMeshTriangle4::type ) createSmallLeaf = createTriangle4Leaf;
-      else if (&bvh->primTy == &TriangleMeshTriangle1v::type) createSmallLeaf = createTriangle1vLeaf;
-      else if (&bvh->primTy == &TriangleMeshTriangle4v::type) createSmallLeaf = createTriangle4vLeaf;
+      if      (bvh->primTy[0] == &SceneTriangle1::type ) createSmallLeaf = createTriangle1Leaf;
+      else if (bvh->primTy[0] == &SceneTriangle4::type ) createSmallLeaf = createTriangle4Leaf;
+      else if (bvh->primTy[0] == &SceneTriangle1v::type) createSmallLeaf = createTriangle1vLeaf;
+      else if (bvh->primTy[0] == &SceneTriangle4v::type) createSmallLeaf = createTriangle4vLeaf;
+      else if (bvh->primTy[0] == &TriangleMeshTriangle1::type ) createSmallLeaf = createTriangle1Leaf;
+      else if (bvh->primTy[0] == &TriangleMeshTriangle4::type ) createSmallLeaf = createTriangle4Leaf;
+      else if (bvh->primTy[0] == &TriangleMeshTriangle1v::type) createSmallLeaf = createTriangle1vLeaf;
+      else if (bvh->primTy[0] == &TriangleMeshTriangle4v::type) createSmallLeaf = createTriangle4vLeaf;
       else throw std::runtime_error("BVH4BuilderFast: unknown primitive type");
     }
     
@@ -184,7 +184,7 @@ namespace embree
         if (needAllThreads) additionalBlocks = threadCount;
         
         /* allocate as much memory as likely needed and reserve conservative amounts of memory */
-        size_t numPrimBlocks = bvh->primTy.blocks(numPrimitives);
+        size_t numPrimBlocks = bvh->primTy[0]->blocks(numPrimitives);
         size_t numAllocatedNodes = min(size_t(0.6*numPrimBlocks),numPrimitives);
         size_t numAllocatedPrimitives = min(size_t(1.2*numPrimBlocks),numPrimitives);
 #if defined(__X86_64__)
@@ -197,10 +197,10 @@ namespace embree
 
         bytesPrims = numPrimitives * sizeof(PrimRef);
         size_t bytesAllocatedNodes      = numAllocatedNodes * sizeof(BVH4::Node);
-        size_t bytesAllocatedPrimitives = numAllocatedPrimitives * bvh->primTy.bytes;
+        size_t bytesAllocatedPrimitives = numAllocatedPrimitives * bvh->primTy[0]->bytes;
         bytesAllocatedPrimitives        = max(bytesAllocatedPrimitives,bytesPrims); // required as we store prims into primitive array for parallel splits
         size_t bytesReservedNodes       = numReservedNodes * sizeof(BVH4::Node);
-        size_t bytesReservedPrimitives  = numReservedPrimitives * bvh->primTy.bytes;
+        size_t bytesReservedPrimitives  = numReservedPrimitives * bvh->primTy[0]->bytes;
         size_t blocksReservedNodes      = (bytesReservedNodes     +Allocator::blockSize-1)/Allocator::blockSize;
         size_t blocksReservedPrimitives = (bytesReservedPrimitives+Allocator::blockSize-1)/Allocator::blockSize;
         bytesReservedNodes      = Allocator::blockSize*(blocksReservedNodes      + additionalBlocks);
