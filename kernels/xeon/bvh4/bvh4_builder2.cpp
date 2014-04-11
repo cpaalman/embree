@@ -32,10 +32,21 @@ namespace embree
 {
   const size_t BVH4Builder2::ObjectSplitBinner::maxBins;
 
-  BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(TriRefList& prims) 
+  BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(TriRefList& triangles) 
   {
-    add(prims);
-    bin(prims);
+    add(triangles);
+    setup_binning();
+    bin(triangles);
+    best(split);
+  }
+
+  BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(TriRefList& triangles, BezierRefList& beziers) 
+  {
+    add(triangles);
+    add(beziers);
+    setup_binning();
+    bin(triangles);
+    bin(beziers);
     best(split);
   }
 
@@ -47,20 +58,53 @@ namespace embree
     }
   }
 
-  void BVH4Builder2::ObjectSplitBinner::bin(TriRefList& prims)
+  void BVH4Builder2::ObjectSplitBinner::add(BezierRefList& prims)
+  {
+    BezierRefList::iterator i=prims;
+    while (BezierRefBlock* block = i.next()) {
+      info(block->base(),block->size());
+    }
+  }
+
+  void BVH4Builder2::ObjectSplitBinner::setup_binning()
   {
     new (&mapping) Mapping(pinfo);
     for (size_t i=0; i<mapping.size(); i++) {
       counts[i] = 0;
       geomBounds[i][0] = geomBounds[i][1] = geomBounds[i][2] = empty;
     }
+  }
 
+  void BVH4Builder2::ObjectSplitBinner::bin(TriRefList& prims)
+  {
     TriRefList::iterator j=prims;
     while (TriRefBlock* block = j.next())
       bin(block->base(),block->size());
   }
 
+  void BVH4Builder2::ObjectSplitBinner::bin(BezierRefList& prims)
+  {
+    BezierRefList::iterator j=prims;
+    while (BezierRefBlock* block = j.next())
+      bin(block->base(),block->size());
+  }
+
   void BVH4Builder2::ObjectSplitBinner::info(const PrimRef* prims, size_t num)
+  {
+    BBox3fa geomBounds = empty;
+    BBox3fa centBounds = empty;
+    for (size_t i=0; i<num; i++)
+    {
+      const BBox3fa bounds = prims[i].bounds(); 
+      geomBounds.extend(bounds);
+      centBounds.extend(center2(bounds));
+    }
+    pinfo.num += num;
+    pinfo.geomBounds.extend(geomBounds);
+    pinfo.centBounds.extend(centBounds);
+  }
+
+  void BVH4Builder2::ObjectSplitBinner::info(const Bezier1* prims, size_t num)
   {
     BBox3fa geomBounds = empty;
     BBox3fa centBounds = empty;
@@ -103,6 +147,20 @@ namespace embree
       const BBox3fa prim0 = prims[i].bounds(); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
       
       /*! increase bounds of bins */
+      const int b00 = bin0.x; counts[b00][0]++; geomBounds[b00][0].extend(prim0); 
+      const int b01 = bin0.y; counts[b01][1]++; geomBounds[b01][1].extend(prim0); 
+      const int b02 = bin0.z; counts[b02][2]++; geomBounds[b02][2].extend(prim0); 
+    }
+  }
+
+  void BVH4Builder2::ObjectSplitBinner::bin(const Bezier1* prims, size_t num)
+  {
+    for (size_t i=0; i<num; i++)
+    {
+      /*! map even and odd primitive to bin */
+      const BBox3fa prim0 = prims[i+0].bounds(); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
+      
+      /*! increase bounds for bins for even primitive */
       const int b00 = bin0.x; counts[b00][0]++; geomBounds[b00][0].extend(prim0); 
       const int b01 = bin0.y; counts[b01][1]++; geomBounds[b01][1].extend(prim0); 
       const int b02 = bin0.z; counts[b02][2]++; geomBounds[b02][2].extend(prim0); 
@@ -159,10 +217,7 @@ namespace embree
     split.pinfo = pinfo;
   }
   
-  void BVH4Builder2::ObjectSplitBinner::Split::split(size_t thread, PrimRefBlockAlloc<PrimRef>* alloc, 
-                                                     TriRefList& prims, 
-                                                     TriRefList& lprims, 
-                                                     TriRefList& rprims)
+  void BVH4Builder2::ObjectSplitBinner::Split::split(size_t thread, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims)
   {
     TriRefList::item* lblock = lprims.insert(alloc->malloc(thread));
     TriRefList::item* rblock = rprims.insert(alloc->malloc(thread));
@@ -172,6 +227,34 @@ namespace embree
       for (size_t i=0; i<block->size(); i++) 
       {
         const PrimRef& prim = block->at(i); 
+                
+        if (mapping.bin_unsafe(prim.bounds())[dim] < pos) 
+        {
+          if (likely(lblock->insert(prim))) continue; 
+          lblock = lprims.insert(alloc->malloc(thread));
+          lblock->insert(prim);
+        } 
+        else 
+        {
+          if (likely(rblock->insert(prim))) continue;
+          rblock = rprims.insert(alloc->malloc(thread));
+          rblock->insert(prim);
+        }
+      }
+      alloc->free(thread,block);
+    }
+  }
+
+  void BVH4Builder2::ObjectSplitBinner::Split::split(size_t thread, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims)
+  {
+    BezierRefList::item* lblock = lprims.insert(alloc->malloc(thread));
+    BezierRefList::item* rblock = rprims.insert(alloc->malloc(thread));
+    
+    while (BezierRefList::item* block = prims.take()) 
+    {
+      for (size_t i=0; i<block->size(); i++) 
+      {
+        const Bezier1& prim = block->at(i); 
                 
         if (mapping.bin_unsafe(prim.bounds())[dim] < pos) 
         {

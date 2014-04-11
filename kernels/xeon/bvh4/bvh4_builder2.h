@@ -235,6 +235,8 @@ namespace embree
       
       void split(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims);
 
+      void split(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims);
+
     public:
       PrimInfo pinfo;
       Mapping mapping;    //!< Mapping to bins
@@ -245,21 +247,32 @@ namespace embree
     
     /*! default constructor */
     ObjectSplitBinner (TriRefList& prims);
+    ObjectSplitBinner (TriRefList& prims, BezierRefList& beziers);
   
   private:
 
     void add(TriRefList& prims);
+
+    void add(BezierRefList& prims);
+
+    void setup_binning();
     
     void bin(TriRefList& prims);
+
+    void bin(BezierRefList& prims);
 
     /*! calculate the best possible split */
     void best(Split& split_o);
 
     void info(const PrimRef* prims, size_t num);
 
+    void info(const Bezier1* prims, size_t num);
+
     /*! bin an array of primitives */
     void bin(const PrimRef* prim, size_t num);
-    
+
+    /*! bin an array of beziers */
+    void bin(const Bezier1* prim, size_t num);
     
     /*! Compute the number of blocks occupied for each dimension. */
     __forceinline static Vec3ia blocks(const Vec3ia& a) { return (a+Vec3ia((1 << logBlockSize)-1)) >> logBlockSize; }
