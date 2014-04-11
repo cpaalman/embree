@@ -169,7 +169,7 @@ namespace embree
       {
         const PrimRef& prim = block->at(i); 
                 
-        if (left(prim)) 
+        if (mapping.bin_unsafe(prim.bounds())[dim] < pos) 
         {
           if (likely(lblock->insert(prim))) continue; 
           lblock = lprims.insert(alloc->malloc(thread));

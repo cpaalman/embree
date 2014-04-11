@@ -18,6 +18,7 @@
 
 #include "common/buildsource.h"
 #include "common/primref.h"
+#include "geometry/bezier1.h"
 #include "primrefalloc.h"
 #include "primrefblock.h"
 
@@ -37,9 +38,6 @@ namespace embree
 
   public:
 
-    /*! We build the tree depth first */
-    static const bool depthFirst = true;
-
     static const std::string name() { return "objectsplit"; }
     
     /*! stores bounding information for a set of primitives */
@@ -48,15 +46,6 @@ namespace embree
     public:
       __forceinline PrimInfo () 
         : num(0), geomBounds(empty), centBounds(empty) {}
-
-      __forceinline PrimInfo (size_t num, const BBox3fa& geomBounds) 
-        : num(num), geomBounds(geomBounds), centBounds(geomBounds) {}
-      
-      __forceinline PrimInfo (size_t num, const BBox3fa& geomBounds, const BBox3fa& centBounds) 
-        : num(num), geomBounds(geomBounds), centBounds(centBounds) {}
-
-      __forceinline PrimInfo (size_t num, const BBox3fa& geomBounds, const BBox3fa& centBounds, const PrimInfo& other) 
-        : num(num), geomBounds(geomBounds), centBounds(centBounds) {}
 
       /*! returns the number of primitives */
       __forceinline size_t size() const { 
@@ -68,15 +57,6 @@ namespace embree
         return halfArea(geomBounds)*blocks(num); 
       }
 
-      /*! clears global data */
-      __forceinline void clear () { 
-      }
-      
-      /*! stream output */
-      friend std::ostream& operator<<(std::ostream& cout, const PrimInfo& pinfo) {
-        return cout << "PrimInfo { num = " << pinfo.num << ", geomBounds = " << pinfo.geomBounds << ", centBounds = " << pinfo.centBounds << "}";
-      }
-      
     public:
       size_t num;          //!< number of primitives
       BBox3fa geomBounds;   //!< geometry bounds of primitives
@@ -128,14 +108,6 @@ namespace embree
       
       /*! return SAH cost of performing the split */
       __forceinline float sah() const { return cost; } 
-      
-      /*! return true if this is a spatial split */
-      __forceinline bool spatial() const { return false; }
-
-      /*! tests if a primitive belongs to the left side of the split */
-      __forceinline int left(const PrimRef& prim) const {
-        return mapping.bin_unsafe(prim.bounds())[dim] < pos;
-      }
 
       /*! splitting of the primitive if required */
       __forceinline void split(const PrimRef& prim, PrimRef& lprim_o, PrimRef& rprim_o) const {
@@ -144,20 +116,8 @@ namespace embree
         assert(false);
       }
       
-      void split(size_t threadIndex, PrimRefAlloc* alloc, 
-                                                     atomic_set<PrimRefBlock>& prims, 
-                                                     atomic_set<PrimRefBlock>& lprims, 
-                                                     atomic_set<PrimRefBlock>& rprims);
+      void split(size_t threadIndex, PrimRefAlloc* alloc, atomic_set<PrimRefBlock>& prims, atomic_set<PrimRefBlock>& lprims, atomic_set<PrimRefBlock>& rprims);
 
-      /*! stream output */
-      friend std::ostream& operator<<(std::ostream& cout, const Split& split) {
-        return cout << "Split { dim = " << split.dim << 
-          ", pos = " << split.pos << 
-          ", sah = " << split.cost << 
-          ", linfo = " << split.linfo <<
-          ", rinfo = " << split.rinfo << "}";
-      }
-      
     public:
       PrimInfo pinfo;
       Mapping mapping;    //!< Mapping to bins
