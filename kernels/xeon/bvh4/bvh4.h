@@ -92,8 +92,8 @@ namespace embree
 
        /*! Prefetches the node this reference points to */
       __forceinline void prefetch() const {
-	prefetchL1(((char*)ptr)+0*64);
-	prefetchL1(((char*)ptr)+1*64);
+	prefetchL1(((char*)(ptr & ~deco_mask))+0*64);
+	prefetchL1(((char*)(ptr & ~deco_mask))+1*64);
       }
 
       /*! Sets the barrier bit. */
