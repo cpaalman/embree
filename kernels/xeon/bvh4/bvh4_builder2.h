@@ -42,11 +42,6 @@ namespace embree
     typedef typename BVH4::Node    Node;
     typedef typename BVH4::NodeRef NodeRef;
 
-    /*! Split type of the split heuristic. */
-    //typedef typename Heuristic::Split Split;
-    //typedef typename Heuristic::PrimInfo PrimInfo;
-    //typedef Splitter<Heuristic> SplitterNormal;
-
     class ObjectSplitBinner
   {
     /*! Maximal number of bins. */
@@ -54,8 +49,6 @@ namespace embree
 
   public:
 
-    static const std::string name() { return "objectsplit"; }
-    
     /*! stores bounding information for a set of primitives */
     class PrimInfo
     {
