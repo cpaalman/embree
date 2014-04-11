@@ -303,7 +303,7 @@ namespace embree
     /*! creates a leaf node */
     NodeRef createLeaf(size_t threadIndex, TriRefList& prims, const ObjectSplitBinner::Split& split);
 
-    NodeRef recurse(size_t threadIndex, size_t depth, TriRefList& prims, const ObjectSplitBinner::Split& split);
+    NodeRef recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const ObjectSplitBinner::Split& split);
 
   private:
     BuildSource* source;      //!< build source interface
