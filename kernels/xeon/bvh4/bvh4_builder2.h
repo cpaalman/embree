@@ -246,31 +246,42 @@ namespace embree
     /*! default constructor */
     ObjectSplitBinner (TriRefList& prims);
     ObjectSplitBinner (TriRefList& prims, BezierRefList& beziers);
+
+    ObjectSplitBinner (LinearSpace3fa& space, TriRefList& prims);
+    ObjectSplitBinner (LinearSpace3fa& space, TriRefList& prims, BezierRefList& beziers);
   
   private:
 
     void add(TriRefList& prims);
+    void add(LinearSpace3fa& space, TriRefList& prims);
 
     void add(BezierRefList& prims);
+    void add(LinearSpace3fa& space, BezierRefList& prims);
 
     void setup_binning();
     
     void bin(TriRefList& prims);
+    void bin(LinearSpace3fa& space, TriRefList& prims);
 
     void bin(BezierRefList& prims);
+    void bin(LinearSpace3fa& space, BezierRefList& prims);
 
     /*! calculate the best possible split */
     void best(Split& split_o);
 
     void info(const PrimRef* prims, size_t num);
+    void info(LinearSpace3fa& space, const PrimRef* prims, size_t num);
 
     void info(const Bezier1* prims, size_t num);
+    void info(LinearSpace3fa& space, const Bezier1* prims, size_t num);
 
     /*! bin an array of primitives */
     void bin(const PrimRef* prim, size_t num);
+    void bin(LinearSpace3fa& space, const PrimRef* prim, size_t num);
 
     /*! bin an array of beziers */
     void bin(const Bezier1* prim, size_t num);
+    void bin(LinearSpace3fa& space, const Bezier1* prim, size_t num);
     
     /*! Compute the number of blocks occupied for each dimension. */
     __forceinline static Vec3ia blocks(const Vec3ia& a) { return (a+Vec3ia((1 << logBlockSize)-1)) >> logBlockSize; }
@@ -303,6 +314,7 @@ namespace embree
     static const NAABBox3fa computeAlignedBounds(BezierRefList& beziers, const LinearSpace3fa& space);
     static const NAABBox3fa computeAlignedBounds(TriRefList& tris, BezierRefList& beziers, const LinearSpace3fa& space);
 
+    static const LinearSpace3fa computeHairSpace(BezierRefList& prims);
 
     /*! builder entry point */
     void build(size_t threadIndex, size_t threadCount);

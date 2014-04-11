@@ -32,11 +32,32 @@ namespace embree
 {
   const size_t BVH4Builder2::ObjectSplitBinner::maxBins;
 
+  Scene* g_scene = NULL; // FIXME: remove me
+
+  BBox3fa primBounds(const LinearSpace3fa& space, const PrimRef& prim)
+  {
+    TriangleMesh* mesh = (TriangleMesh*) g_scene->get(prim.geomID());
+    TriangleMesh::Triangle tri = mesh->triangle(prim.primID());
+    BBox3fa bounds = empty;
+    bounds.extend(xfmPoint(space,mesh->vertex(tri.v[0])));
+    bounds.extend(xfmPoint(space,mesh->vertex(tri.v[1])));
+    bounds.extend(xfmPoint(space,mesh->vertex(tri.v[2])));
+    return bounds;
+  }
+
   BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(TriRefList& triangles) 
   {
     add(triangles);
     setup_binning();
     bin(triangles);
+    best(split);
+  }
+
+  BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(LinearSpace3fa& space, TriRefList& triangles) 
+  {
+    add(space,triangles);
+    setup_binning();
+    bin(space,triangles);
     best(split);
   }
 
@@ -50,6 +71,16 @@ namespace embree
     best(split);
   }
 
+  BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(LinearSpace3fa& space, TriRefList& triangles, BezierRefList& beziers) 
+  {
+    add(space,triangles);
+    add(space,beziers);
+    setup_binning();
+    bin(space,triangles);
+    bin(space,beziers);
+    best(split);
+  }
+
   void BVH4Builder2::ObjectSplitBinner::add(TriRefList& prims)
   {
     TriRefList::iterator i=prims;
@@ -58,11 +89,27 @@ namespace embree
     }
   }
 
+  void BVH4Builder2::ObjectSplitBinner::add(LinearSpace3fa& space, TriRefList& prims)
+  {
+    TriRefList::iterator i=prims;
+    while (TriRefBlock* block = i.next()) {
+      info(space,block->base(),block->size());
+    }
+  }
+
   void BVH4Builder2::ObjectSplitBinner::add(BezierRefList& prims)
   {
     BezierRefList::iterator i=prims;
     while (BezierRefBlock* block = i.next()) {
       info(block->base(),block->size());
+    }
+  }
+
+  void BVH4Builder2::ObjectSplitBinner::add(LinearSpace3fa& space, BezierRefList& prims)
+  {
+    BezierRefList::iterator i=prims;
+    while (BezierRefBlock* block = i.next()) {
+      info(space,block->base(),block->size());
     }
   }
 
@@ -82,11 +129,25 @@ namespace embree
       bin(block->base(),block->size());
   }
 
+  void BVH4Builder2::ObjectSplitBinner::bin(LinearSpace3fa& space, TriRefList& prims)
+  {
+    TriRefList::iterator j=prims;
+    while (TriRefBlock* block = j.next())
+      bin(space,block->base(),block->size());
+  }
+
   void BVH4Builder2::ObjectSplitBinner::bin(BezierRefList& prims)
   {
     BezierRefList::iterator j=prims;
     while (BezierRefBlock* block = j.next())
       bin(block->base(),block->size());
+  }
+
+  void BVH4Builder2::ObjectSplitBinner::bin(LinearSpace3fa& space, BezierRefList& prims)
+  {
+    BezierRefList::iterator j=prims;
+    while (BezierRefBlock* block = j.next())
+      bin(space,block->base(),block->size());
   }
 
   void BVH4Builder2::ObjectSplitBinner::info(const PrimRef* prims, size_t num)
@@ -105,6 +166,23 @@ namespace embree
     pinfo.centBounds.extend(centBounds);
   }
 
+  void BVH4Builder2::ObjectSplitBinner::info(LinearSpace3fa& space, const PrimRef* prims, size_t num)
+  {
+    BBox3fa geomBounds = empty;
+    BBox3fa centBounds = empty;
+    for (size_t i=0; i<num; i++)
+    {
+      //const BBox3fa bounds = prims[i].bounds(space); 
+      const BBox3fa bounds = primBounds(space,prims[i]); 
+      geomBounds.extend(bounds);
+      centBounds.extend(center2(bounds));
+    }
+    pinfo.num += num;
+    pinfo.numTriangles += num;
+    pinfo.geomBounds.extend(geomBounds);
+    pinfo.centBounds.extend(centBounds);
+  }
+
   void BVH4Builder2::ObjectSplitBinner::info(const Bezier1* prims, size_t num)
   {
     BBox3fa geomBounds = empty;
@@ -112,6 +190,22 @@ namespace embree
     for (size_t i=0; i<num; i++)
     {
       const BBox3fa bounds = prims[i].bounds(); 
+      geomBounds.extend(bounds);
+      centBounds.extend(center2(bounds));
+    }
+    pinfo.num += num;
+    pinfo.numBeziers += num;
+    pinfo.geomBounds.extend(geomBounds);
+    pinfo.centBounds.extend(centBounds);
+  }
+
+  void BVH4Builder2::ObjectSplitBinner::info(LinearSpace3fa& space, const Bezier1* prims, size_t num)
+  {
+    BBox3fa geomBounds = empty;
+    BBox3fa centBounds = empty;
+    for (size_t i=0; i<num; i++)
+    {
+      const BBox3fa bounds = prims[i].bounds(space); 
       geomBounds.extend(bounds);
       centBounds.extend(center2(bounds));
     }
@@ -155,12 +249,63 @@ namespace embree
     }
   }
 
+  void BVH4Builder2::ObjectSplitBinner::bin(LinearSpace3fa& space, const PrimRef* prims, size_t num)
+  {
+    if (num == 0) return;
+    
+    size_t i; for (i=0; i<num-1; i+=2)
+    {
+      /*! map even and odd primitive to bin */
+      //const BBox3fa prim0 = prims[i+0].bounds(space); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
+      //const BBox3fa prim1 = prims[i+1].bounds(space); const Vec3ia bin1 = mapping.bin(prim1); const Vec3fa center1 = Vec3fa(center2(prim1));
+      const BBox3fa prim0 = primBounds(space,prims[i+0]); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
+      const BBox3fa prim1 = primBounds(space,prims[i+1]); const Vec3ia bin1 = mapping.bin(prim1); const Vec3fa center1 = Vec3fa(center2(prim1));
+      
+      /*! increase bounds for bins for even primitive */
+      const int b00 = bin0.x; triCounts[b00][0]++; geomBounds[b00][0].extend(prim0); 
+      const int b01 = bin0.y; triCounts[b01][1]++; geomBounds[b01][1].extend(prim0); 
+      const int b02 = bin0.z; triCounts[b02][2]++; geomBounds[b02][2].extend(prim0); 
+      
+      /*! increase bounds of bins for odd primitive */
+      const int b10 = bin1.x; triCounts[b10][0]++; geomBounds[b10][0].extend(prim1); 
+      const int b11 = bin1.y; triCounts[b11][1]++; geomBounds[b11][1].extend(prim1); 
+      const int b12 = bin1.z; triCounts[b12][2]++; geomBounds[b12][2].extend(prim1); 
+    }
+    
+    /*! for uneven number of primitives */
+    if (i < num)
+    {
+      /*! map primitive to bin */
+      //const BBox3fa prim0 = prims[i].bounds(space); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
+      const BBox3fa prim0 = primBounds(space,prims[i]); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
+      
+      /*! increase bounds of bins */
+      const int b00 = bin0.x; triCounts[b00][0]++; geomBounds[b00][0].extend(prim0); 
+      const int b01 = bin0.y; triCounts[b01][1]++; geomBounds[b01][1].extend(prim0); 
+      const int b02 = bin0.z; triCounts[b02][2]++; geomBounds[b02][2].extend(prim0); 
+    }
+  }
+
   void BVH4Builder2::ObjectSplitBinner::bin(const Bezier1* prims, size_t num)
   {
     for (size_t i=0; i<num; i++)
     {
       /*! map even and odd primitive to bin */
       const BBox3fa prim0 = prims[i+0].bounds(); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
+      
+      /*! increase bounds for bins for even primitive */
+      const int b00 = bin0.x; bezierCounts[b00][0]++; geomBounds[b00][0].extend(prim0); 
+      const int b01 = bin0.y; bezierCounts[b01][1]++; geomBounds[b01][1].extend(prim0); 
+      const int b02 = bin0.z; bezierCounts[b02][2]++; geomBounds[b02][2].extend(prim0); 
+    }
+  }
+
+  void BVH4Builder2::ObjectSplitBinner::bin(LinearSpace3fa& space, const Bezier1* prims, size_t num)
+  {
+    for (size_t i=0; i<num; i++)
+    {
+      /*! map even and odd primitive to bin */
+      const BBox3fa prim0 = prims[i+0].bounds(space); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
       
       /*! increase bounds for bins for even primitive */
       const int b00 = bin0.x; bezierCounts[b00][0]++; geomBounds[b00][0].extend(prim0); 
@@ -307,12 +452,11 @@ namespace embree
     return merge(computeAlignedBounds(tris),computeAlignedBounds(beziers));
   }
 
-#if 0
   const NAABBox3fa BVH4Builder2::computeAlignedBounds(TriRefList& tris, const LinearSpace3fa& space)
   {
     BBox3fa bounds = empty;
     for (TriRefList::block_iterator_unsafe i=tris; i; i++)
-      bounds.extend(i->bounds(space));
+      bounds.extend(primBounds(space,*i));
     return NAABBox3fa(space,bounds);
   }
 
@@ -327,13 +471,57 @@ namespace embree
   const NAABBox3fa BVH4Builder2::computeAlignedBounds(TriRefList& tris, BezierRefList& beziers, const LinearSpace3fa& space) {
     return NAABBox3fa(space,merge(computeAlignedBounds(tris,space).bounds,computeAlignedBounds(beziers,space).bounds));
   }
+
+  const LinearSpace3fa BVH4Builder2::computeHairSpace(BezierRefList& prims)
+  {
+    size_t N = BezierRefList::block_iterator_unsafe(prims).size();
+    if (N == 0)
+      return one; // FIXME: can cause problems with compression
+
+    float bestArea = inf;
+    LinearSpace3fa bestSpace = one;
+    BBox3fa bestBounds = empty;
+
+    size_t k=0;
+    for (BezierRefList::block_iterator_unsafe i = prims; i; i++)
+    {
+      if ((k++) % ((N+3)/4)) continue;
+      //size_t k = begin + rand() % (end-begin);
+      const Vec3fa axis = normalize(i->p3 - i->p0);
+      if (length(i->p3 - i->p0) < 1E-9) continue;
+      const LinearSpace3fa space0 = LinearSpace3fa::rotate(Vec3fa(0,0,1),2.0f*float(pi)*drand48())*frame(axis).transposed();
+      const LinearSpace3fa space = clamp(space0);
+      BBox3fa bounds = empty;
+      float area = 0.0f;
+      for (BezierRefList::block_iterator_unsafe j = prims; j; j++) {
+        const BBox3fa cbounds = j->bounds(space);
+        area += embree::area(cbounds);
+        bounds.extend(cbounds);
+      }
+
+      if (area <= bestArea) {
+        bestBounds = bounds;
+        bestSpace = space;
+        bestArea = area;
+      }
+    }
+    //assert(bestArea != (float)inf); // FIXME: can get raised if all selected curves are points
+#ifdef DEBUG
+    if (bestArea == (float)inf)
+      {
+        std::cout << "WARNING: bestArea == (float)inf" << std::endl; 
+      }
 #endif
+
+    return bestSpace;
+  }
 
   void BVH4Builder2::build(size_t threadIndex, size_t threadCount) 
   {
     size_t numBeziers = 0;
     size_t numTriangles = 0;
     Scene* scene = (Scene*) geometry;
+    g_scene = scene; // FIXME: hack
     for (size_t i=0; i<scene->size(); i++) 
     {
       Geometry* geom = scene->get(i);
