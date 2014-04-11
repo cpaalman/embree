@@ -281,6 +281,48 @@ namespace embree
       this->maxLeafSize = maxLeafPrims;
   }
 
+  const BBox3fa BVH4Builder2::computeAlignedBounds(TriRefList& tris)
+  {
+    BBox3fa bounds = empty;
+    for (TriRefList::block_iterator_unsafe i=tris; i; i++)
+      bounds.extend(i->bounds());
+    return bounds;
+  }
+
+  const BBox3fa BVH4Builder2::computeAlignedBounds(BezierRefList& beziers)
+  {
+    BBox3fa bounds = empty;
+    for (BezierRefList::block_iterator_unsafe i=beziers; i; i++)
+      bounds.extend(i->bounds());
+    return bounds;
+  }
+
+  const BBox3fa BVH4Builder2::computeAlignedBounds(TriRefList& tris, BezierRefList& beziers) {
+    return merge(computeAlignedBounds(tris),computeAlignedBounds(beziers));
+  }
+
+#if 0
+  const NAABBox3fa BVH4Builder2::computeAlignedBounds(TriRefList& tris, const LinearSpace3fa& space)
+  {
+    BBox3fa bounds = empty;
+    for (TriRefList::block_iterator_unsafe i=tris; i; i++)
+      bounds.extend(i->bounds(space));
+    return NAABBox3fa(space,bounds);
+  }
+
+  const NAABBox3fa BVH4Builder2::computeAlignedBounds(BezierRefList& beziers, const LinearSpace3fa& space)
+  {
+    BBox3fa bounds = empty;
+    for (BezierRefList::block_iterator_unsafe i=beziers; i; i++)
+      bounds.extend(i->bounds(space));
+    return NAABBox3fa(space,bounds);
+  }
+
+  const NAABBox3fa BVH4Builder2::computeAlignedBounds(TriRefList& tris, BezierRefList& beziers, const LinearSpace3fa& space) {
+    return NAABBox3fa(space,merge(computeAlignedBounds(tris,space).bounds,computeAlignedBounds(beziers,space).bounds));
+  }
+#endif
+
   void BVH4Builder2::build(size_t threadIndex, size_t threadCount) 
   {
     //size_t numPrimitives = source->size();
@@ -427,7 +469,7 @@ namespace embree
     }
   }
   
-  typename BVH4Builder2::NodeRef BVH4Builder2::createLeaf(size_t threadIndex, TriRefList& prims, const ObjectSplitBinner::Split& split)
+  BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, TriRefList& prims, const ObjectSplitBinner::Split& split)
   {
     size_t N = bvh->primTy[0]->blocks(TriRefList::block_iterator_unsafe(prims).size());
 
@@ -436,9 +478,6 @@ namespace embree
       std::cout << "!" << std::flush;
       N = (size_t)BVH4::maxLeafBlocks;
     }
-    //size_t numGeneratedPrimsOld = atomic_add(&numGeneratedPrims,N); 
-    //if (numGeneratedPrimsOld%10000 > (numGeneratedPrimsOld+N)%10000) std::cout << "." << std::flush; 
-    //assert(N <= (size_t)BVH4::maxLeafBlocks);
     Scene* scene = (Scene*) geometry;
 
     if (bvh->primTy[0] == &SceneTriangle4::type) 
@@ -481,6 +520,66 @@ namespace embree
       throw std::runtime_error("unknown primitive type");
   }
 
+  BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, BezierRefList& prims, const ObjectSplitBinner::Split& split)
+  {
+    size_t N = BezierRefList::block_iterator_unsafe(prims).size();
+
+    if (N > (size_t)BVH4::maxLeafBlocks) {
+      //std::cout << "WARNING: Loosing " << N-BVH4::maxLeafBlocks << " primitives during build!" << std::endl;
+      std::cout << "!" << std::flush;
+      N = (size_t)BVH4::maxLeafBlocks;
+    }
+    Scene* scene = (Scene*) geometry;
+
+    if (bvh->primTy[1] == &Bezier1Type::type) 
+    { 
+      Bezier1* leaf = (Bezier1*) bvh->allocPrimitiveBlocks(threadIndex,1,N);
+      BezierRefList::block_iterator_unsafe iter(prims);
+      for (size_t i=0; i<N; i++) { leaf[i] = *iter; iter++; }
+      assert(!iter);
+
+      /* free all primitive blocks */
+      while (BezierRefList::item* block = prims.take())
+        allocBezierRefs.free(threadIndex,block);
+
+      return bvh->encodeLeaf((char*)leaf,N,1);
+    } 
+    else if (bvh->primTy[1] == &SceneBezier1i::type) 
+    {
+      Bezier1i* leaf = (Bezier1i*) bvh->allocPrimitiveBlocks(threadIndex,1,N);
+      BezierRefList::block_iterator_unsafe iter(prims);
+      for (size_t i=0; i<N; i++) {
+        const Bezier1& curve = *iter; iter++;
+        const BezierCurves* in = (BezierCurves*) scene->get(curve.geomID);
+        const Vec3fa& p0 = in->vertex(in->curve(curve.primID));
+        leaf[i] = Bezier1i(&p0,curve.geomID,curve.primID,-1); // FIXME: support mask
+      }
+
+      /* free all primitive blocks */
+      while (BezierRefList::item* block = prims.take())
+        allocBezierRefs.free(threadIndex,block);
+
+      return bvh->encodeLeaf((char*)leaf,N,1);
+    }
+    else 
+      throw std::runtime_error("unknown primitive type");
+  }
+
+  BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const ObjectSplitBinner::Split& split)
+  {
+    size_t Ntris    = TriRefList   ::block_iterator_unsafe(tris   ).size();
+    size_t Nbeziers = BezierRefList::block_iterator_unsafe(beziers).size();
+    if (Ntris == 0) 
+      return leaf(threadIndex,depth,beziers,split);
+    else if (Nbeziers == 0)
+      return leaf(threadIndex,depth,tris,split);
+    
+    BVH4::UANode* node = bvh->allocUANode(threadIndex);
+    node->set(0,computeAlignedBounds(tris   ),leaf(threadIndex,depth+1,tris   ,split));
+    node->set(1,computeAlignedBounds(beziers),leaf(threadIndex,depth+1,beziers,split));
+    return bvh->encodeNode(node);
+  }
+
   typename BVH4Builder2::NodeRef BVH4Builder2::recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const ObjectSplitBinner::Split& split)
   {
     /*! compute leaf and split cost */
@@ -491,7 +590,7 @@ namespace embree
     
     /*! create a leaf node when threshold reached or SAH tells us to stop */
     if (split.pinfo.size() <= minLeafSize || depth > BVH4::maxBuildDepth || (split.pinfo.size() <= maxLeafSize && leafSAH <= splitSAH)) {
-      return createLeaf(threadIndex,tris,split);
+      return leaf(threadIndex,depth,tris,beziers,split);
     }
     
     /*! initialize child list */

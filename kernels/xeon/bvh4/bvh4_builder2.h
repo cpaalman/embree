@@ -294,6 +294,17 @@ namespace embree
   
   public:
 
+    /*! calculate bounds for range of primitives */
+    static const BBox3fa computeAlignedBounds(TriRefList& tris);
+    static const BBox3fa computeAlignedBounds(BezierRefList& beziers);
+    static const BBox3fa computeAlignedBounds(TriRefList& tris, BezierRefList& beziers);
+    
+    /*! calculate bounds for range of primitives */
+    static const NAABBox3fa computeAlignedBounds(TriRefList& tris, const LinearSpace3fa& space);
+    static const NAABBox3fa computeAlignedBounds(BezierRefList& beziers, const LinearSpace3fa& space);
+    static const NAABBox3fa computeAlignedBounds(TriRefList& tris, BezierRefList& beziers, const LinearSpace3fa& space);
+
+
     /*! builder entry point */
     void build(size_t threadIndex, size_t threadCount);
 
@@ -301,7 +312,9 @@ namespace embree
     BVH4Builder2 (BVH4* bvh, BuildSource* source, void* geometry, const size_t minLeafSize = 1, const size_t maxLeafSize = inf);
 
     /*! creates a leaf node */
-    NodeRef createLeaf(size_t threadIndex, TriRefList& prims, const ObjectSplitBinner::Split& split);
+    NodeRef leaf(size_t threadIndex, size_t depth, TriRefList& prims, const ObjectSplitBinner::Split& split);
+    NodeRef leaf(size_t threadIndex, size_t depth, BezierRefList& prims, const ObjectSplitBinner::Split& split);
+    NodeRef leaf(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const ObjectSplitBinner::Split& split);
 
     NodeRef recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const ObjectSplitBinner::Split& split);
 
