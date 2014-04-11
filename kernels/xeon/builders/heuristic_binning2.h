@@ -146,8 +146,8 @@ namespace embree
       
       void split(size_t threadIndex, PrimRefAlloc* alloc, 
                                                      atomic_set<PrimRefBlock>& prims, 
-                                                     atomic_set<PrimRefBlock>& lprims, Split& lsplit,
-                                                     atomic_set<PrimRefBlock>& rprims, Split& rsplit);
+                                                     atomic_set<PrimRefBlock>& lprims, 
+                                                     atomic_set<PrimRefBlock>& rprims);
 
       /*! stream output */
       friend std::ostream& operator<<(std::ostream& cout, const Split& split) {
@@ -164,10 +164,6 @@ namespace embree
       int dim;            //!< Best object split dimension
       int pos;            //!< Best object split position
       float cost;         //!< SAH cost of performing best object split
-      
-    public:
-      PrimInfo linfo;     //!< Left geometry information
-      PrimInfo rinfo;     //!< Right geometry information
     };
     
     /*! default constructor */

@@ -140,26 +140,6 @@ namespace embree
 
     split.mapping = mapping;
     split.pinfo = pinfo;
-    if (split.pos == 0) return;
-    
-    /* calculate geometry info from binning data */
-    size_t pos = split.pos, dim = split.dim;
-    size_t numLeft = 0, numRight = 0;
-    BBox3fa lcentBounds = empty, rcentBounds = empty;
-    BBox3fa lgeomBounds = empty, rgeomBounds = empty;
-    for (size_t i=0; i<pos; i++) {
-      numLeft += counts[i][dim];
-      lcentBounds.extend(centBounds[i][dim]);
-      lgeomBounds.extend(geomBounds[i][dim]);
-    }
-    for (size_t i=pos; i<mapping.size(); i++) {
-      numRight += counts[i][dim];
-      rcentBounds.extend(centBounds[i][dim]);
-      rgeomBounds.extend(geomBounds[i][dim]);
-    }
-    assert(numLeft + numRight == pinfo.size());
-    new (&split.linfo) PrimInfo(numLeft ,lgeomBounds,lcentBounds);
-    new (&split.rinfo) PrimInfo(numRight,rgeomBounds,rcentBounds);
   }
   
   template<int logBlockSize>
@@ -182,11 +162,11 @@ namespace embree
   template<int logBlockSize>
   void HeuristicBinning2<logBlockSize>::Split::split(size_t thread, PrimRefAlloc* alloc, 
                                                      atomic_set<PrimRefBlock>& prims, 
-                                                     atomic_set<PrimRefBlock>& lprims, Split& lsplit,
-                                                     atomic_set<PrimRefBlock>& rprims, Split& rsplit)
+                                                     atomic_set<PrimRefBlock>& lprims, 
+                                                     atomic_set<PrimRefBlock>& rprims)
   {
-    HeuristicBinning2 lheuristic(this->linfo);
-    HeuristicBinning2 rheuristic(this->rinfo);
+    //HeuristicBinning2 lheuristic(this->linfo);
+    //HeuristicBinning2 rheuristic(this->rinfo);
     atomic_set<PrimRefBlock>::item* lblock = lprims.insert(alloc->malloc(thread));
     atomic_set<PrimRefBlock>::item* rblock = rprims.insert(alloc->malloc(thread));
     
@@ -199,22 +179,22 @@ namespace embree
         if (left(prim)) 
         {
           if (likely(lblock->insert(prim))) continue; 
-          lheuristic.bin(lblock->base(),lblock->size());
+          //lheuristic.bin(lblock->base(),lblock->size());
           lblock = lprims.insert(alloc->malloc(thread));
           lblock->insert(prim);
         } 
         else 
         {
           if (likely(rblock->insert(prim))) continue;
-          rheuristic.bin(rblock->base(),rblock->size());
+          //rheuristic.bin(rblock->base(),rblock->size());
           rblock = rprims.insert(alloc->malloc(thread));
           rblock->insert(prim);
         }
       }
       alloc->free(thread,block);
     }
-    lheuristic.bin(lblock->base(),lblock->size()); linfo = this->linfo; lheuristic.best(lsplit); 
-    rheuristic.bin(rblock->base(),rblock->size()); rinfo = this->rinfo; rheuristic.best(rsplit);
+    //lheuristic.bin(lblock->base(),lblock->size()); lheuristic.best(lsplit); 
+    //rheuristic.bin(rblock->base(),rblock->size()); rheuristic.best(rsplit);
   }
 
   /*! explicit template instantiations */

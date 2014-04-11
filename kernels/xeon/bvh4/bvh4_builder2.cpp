@@ -169,13 +169,13 @@ namespace embree
       if (bestChild == -1) break;
       
       /*! perform best found split and find new splits */
-      Split lsplit,rsplit;
+      //Split lsplit,rsplit;
       PrimInfo linfo,rinfo;
       atomic_set<PrimRefBlock> lprims,rprims;
       csplit[bestChild].split(threadIndex,&alloc,
                               cprims[bestChild],
-                              lprims,lsplit,
-                              rprims,rsplit);
+                              lprims,
+                              rprims);
 
       Heuristic lheuristic;
       lheuristic.add(lprims);
