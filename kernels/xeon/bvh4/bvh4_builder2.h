@@ -22,6 +22,7 @@
 #include "builders/splitter.h"
 #include "builders/splitter_parallel.h"
 #include "geometry/primitive.h"
+#include "geometry/bezier1.h"
 
 #define logBlockSize 2
 
@@ -41,6 +42,113 @@ namespace embree
     /*! Type shortcuts */
     typedef typename BVH4::Node    Node;
     typedef typename BVH4::NodeRef NodeRef;
+
+    /*! Block of build primitives */
+    template<typename PrimRef>
+    class PrimRefBlock
+    {
+    public:
+
+      typedef PrimRef T;
+
+      /*! Number of primitive references inside a block */
+      static const size_t blockSize = 511;
+
+      /*! default constructor */
+      PrimRefBlock () : num(0) {}
+
+      /*! frees the block */
+      __forceinline void clear(size_t n = 0) { num = n; }
+      
+      /*! return base pointer */
+      __forceinline PrimRef* base() { return ptr; }
+
+      /*! returns number of elements */
+      __forceinline size_t size() const { return num; }
+
+      /*! inserts a primitive reference */
+      __forceinline bool insert(const PrimRef& ref) {
+        if (unlikely(num >= blockSize)) return false;
+        ptr[num++] = ref;
+        return true;
+      }
+
+      /*! access the i-th primitive reference */
+      __forceinline       PrimRef& operator[] (size_t i)       { return ptr[i]; }
+      __forceinline const PrimRef& operator[] (size_t i) const { return ptr[i]; }
+    
+      /*! access the i-th primitive reference */
+      __forceinline       PrimRef& at (size_t i)       { return ptr[i]; }
+      __forceinline const PrimRef& at (size_t i) const { return ptr[i]; }
+    
+    private:
+      PrimRef ptr[blockSize];   //!< Block with primitive references
+      size_t num;               //!< Number of primitive references in block
+    };
+
+    typedef PrimRefBlock<PrimRef> TriRefBlock;
+    typedef atomic_set<TriRefBlock> TriRefList;
+
+    typedef PrimRefBlock<Bezier1> BezierRefBlock;
+    typedef atomic_set<BezierRefBlock> BezierRefList;
+
+    template<typename PrimRef>
+      class PrimRefBlockAlloc : public AllocatorBase
+    {
+      ALIGNED_CLASS;
+    public:
+   
+      struct __aligned(4096) ThreadPrimBlockAllocator 
+      {
+        ALIGNED_CLASS_(4096);
+      public:
+      
+        __forceinline typename atomic_set<PrimRefBlock<PrimRef> >::item* malloc(size_t thread, AllocatorBase* alloc) 
+        {
+          /* try to take a block from local list */
+          atomic_set<PrimRefBlock<PrimRef> >::item* ptr = local_free_blocks.take_unsafe();
+          if (ptr) return new (ptr) typename atomic_set<PrimRefBlock<PrimRef> >::item();
+          
+          /* if this failed again we have to allocate more memory */
+          ptr = (typename atomic_set<PrimRefBlock<PrimRef> >::item*) alloc->malloc(sizeof(typename atomic_set<PrimRefBlock<PrimRef> >::item));
+          
+          /* return first block */
+          return new (ptr) typename atomic_set<PrimRefBlock<PrimRef> >::item();
+        }
+      
+        __forceinline void free(typename atomic_set<PrimRefBlock<PrimRef> >::item* ptr) {
+          local_free_blocks.insert_unsafe(ptr);
+        }
+        
+      public:
+        atomic_set<PrimRefBlock<PrimRef> > local_free_blocks; //!< only accessed from one thread
+      };
+      
+    public:
+      
+      /*! Allocator default construction. */
+      PrimRefBlockAlloc () {
+        threadPrimBlockAllocator = new ThreadPrimBlockAllocator[getNumberOfLogicalThreads()];
+      }
+      
+      /*! Allocator destructor. */
+      virtual ~PrimRefBlockAlloc() {
+        delete[] threadPrimBlockAllocator; threadPrimBlockAllocator = NULL;
+      }
+      
+      /*! Allocate a primitive block */
+      __forceinline typename atomic_set<PrimRefBlock<PrimRef> >::item* malloc(size_t thread) {
+        return threadPrimBlockAllocator[thread].malloc(thread,this);
+      }
+      
+      /*! Frees a primitive block */
+      __forceinline void free(size_t thread, typename atomic_set<PrimRefBlock<PrimRef> >::item* block) {
+        return threadPrimBlockAllocator[thread].free(block);
+      }
+      
+    private:
+      ThreadPrimBlockAllocator* threadPrimBlockAllocator;  //!< Thread local allocator
+    };
 
     class ObjectSplitBinner
   {
@@ -125,7 +233,7 @@ namespace embree
         assert(false);
       }
       
-      void split(size_t threadIndex, PrimRefAlloc* alloc, atomic_set<PrimRefBlock>& prims, atomic_set<PrimRefBlock>& lprims, atomic_set<PrimRefBlock>& rprims);
+      void split(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims);
 
     public:
       PrimInfo pinfo;
@@ -136,13 +244,13 @@ namespace embree
     };
     
     /*! default constructor */
-    ObjectSplitBinner (atomic_set<PrimRefBlock>& prims);
+    ObjectSplitBinner (TriRefList& prims);
   
   private:
 
-    void add(atomic_set<PrimRefBlock>& prims);
+    void add(TriRefList& prims);
     
-    void bin(atomic_set<PrimRefBlock>& prims);
+    void bin(TriRefList& prims);
 
     /*! calculate the best possible split */
     void best(Split& split_o);
@@ -180,9 +288,9 @@ namespace embree
     BVH4Builder2 (BVH4* bvh, BuildSource* source, void* geometry, const size_t minLeafSize = 1, const size_t maxLeafSize = inf);
 
     /*! creates a leaf node */
-    NodeRef createLeaf(size_t threadIndex, atomic_set<PrimRefBlock>& prims, const ObjectSplitBinner::Split& split);
+    NodeRef createLeaf(size_t threadIndex, TriRefList& prims, const ObjectSplitBinner::Split& split);
 
-    NodeRef recurse(size_t threadIndex, size_t depth, atomic_set<PrimRefBlock>& prims, const ObjectSplitBinner::Split& split);
+    NodeRef recurse(size_t threadIndex, size_t depth, TriRefList& prims, const ObjectSplitBinner::Split& split);
 
   private:
     BuildSource* source;      //!< build source interface
@@ -192,8 +300,9 @@ namespace embree
     const PrimitiveType& primTy;          //!< triangle type stored in BVH4
     size_t minLeafSize;                 //!< minimal size of a leaf
     size_t maxLeafSize;                 //!< maximal size of a leaf
-    PrimRefAlloc alloc;                 //!< Allocator for primitive blocks
-    TaskScheduler::QUEUE taskQueue;     //!< Task queue to use
+    PrimRefBlockAlloc<Bezier1> allocBezierRefs;                 //!< Allocator for primitive blocks
+    PrimRefBlockAlloc<PrimRef> allocTriRefs;                 //!< Allocator for primitive blocks
+    //TaskScheduler::QUEUE taskQueue;     //!< Task queue to use
 
   public:
     BVH4* bvh;                      //!< Output BVH4

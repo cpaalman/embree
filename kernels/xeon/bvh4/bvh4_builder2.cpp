@@ -17,6 +17,10 @@
 #include "bvh4.h"
 #include "bvh4_builder2.h"
 #include "bvh4_statistics.h"
+#include "common/scene_bezier_curves.h"
+#include "common/scene_triangle_mesh.h"
+#include "geometry/bezier1.h"
+#include "geometry/triangle4.h"
 
 //#include "builders/heuristic_binning.h"
 //#include "builders/heuristic_binning2.h"
@@ -28,22 +32,22 @@ namespace embree
 {
   const size_t BVH4Builder2::ObjectSplitBinner::maxBins;
 
-  BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(atomic_set<PrimRefBlock>& prims) 
+  BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(TriRefList& prims) 
   {
     add(prims);
     bin(prims);
     best(split);
   }
 
-  void BVH4Builder2::ObjectSplitBinner::add(atomic_set<PrimRefBlock>& prims)
+  void BVH4Builder2::ObjectSplitBinner::add(TriRefList& prims)
   {
-    atomic_set<PrimRefBlock>::iterator i=prims;
-    while (PrimRefBlock* block = i.next()) {
+    TriRefList::iterator i=prims;
+    while (TriRefBlock* block = i.next()) {
       info(block->base(),block->size());
     }
   }
 
-  void BVH4Builder2::ObjectSplitBinner::bin(atomic_set<PrimRefBlock>& prims)
+  void BVH4Builder2::ObjectSplitBinner::bin(TriRefList& prims)
   {
     new (&mapping) Mapping(pinfo);
     for (size_t i=0; i<mapping.size(); i++) {
@@ -51,8 +55,8 @@ namespace embree
       geomBounds[i][0] = geomBounds[i][1] = geomBounds[i][2] = empty;
     }
 
-    atomic_set<PrimRefBlock>::iterator j=prims;
-    while (PrimRefBlock* block = j.next())
+    TriRefList::iterator j=prims;
+    while (TriRefBlock* block = j.next())
       bin(block->base(),block->size());
   }
 
@@ -155,15 +159,15 @@ namespace embree
     split.pinfo = pinfo;
   }
   
-  void BVH4Builder2::ObjectSplitBinner::Split::split(size_t thread, PrimRefAlloc* alloc, 
-                                                     atomic_set<PrimRefBlock>& prims, 
-                                                     atomic_set<PrimRefBlock>& lprims, 
-                                                     atomic_set<PrimRefBlock>& rprims)
+  void BVH4Builder2::ObjectSplitBinner::Split::split(size_t thread, PrimRefBlockAlloc<PrimRef>* alloc, 
+                                                     TriRefList& prims, 
+                                                     TriRefList& lprims, 
+                                                     TriRefList& rprims)
   {
-    atomic_set<PrimRefBlock>::item* lblock = lprims.insert(alloc->malloc(thread));
-    atomic_set<PrimRefBlock>::item* rblock = rprims.insert(alloc->malloc(thread));
+    TriRefList::item* lblock = lprims.insert(alloc->malloc(thread));
+    TriRefList::item* rblock = rprims.insert(alloc->malloc(thread));
     
-    while (atomic_set<PrimRefBlock>::item* block = prims.take()) 
+    while (TriRefList::item* block = prims.take()) 
     {
       for (size_t i=0; i<block->size(); i++) 
       {
@@ -211,7 +215,7 @@ namespace embree
     /* first generate primrefs */
     size_t numTriangles = 0;
     size_t numVertices = 0;
-    atomic_set<PrimRefBlock> tris;
+    TriRefList tris;
     BBox3fa geomBounds = empty;
     BBox3fa centBounds = empty;
     Scene* scene = (Scene*)geometry;
@@ -231,9 +235,9 @@ namespace embree
           geomBounds.extend(bounds);
           centBounds.extend(center2(bounds));
           const PrimRef prim = PrimRef(bounds,i,j);
-           atomic_set<PrimRefBlock>::item* block = tris.head();
+           TriRefList::item* block = tris.head();
           if (block == NULL || !block->insert(prim)) {
-            block = tris.insert(alloc.malloc(threadIndex));
+            block = tris.insert(allocTriRefs.malloc(threadIndex));
             block->insert(prim);
           }
         }
@@ -291,33 +295,66 @@ namespace embree
     }
   }
   
-  typename BVH4Builder2::NodeRef BVH4Builder2::createLeaf(size_t threadIndex, atomic_set<PrimRefBlock>& prims, const ObjectSplitBinner::Split& split)
+  typename BVH4Builder2::NodeRef BVH4Builder2::createLeaf(size_t threadIndex, TriRefList& prims, const ObjectSplitBinner::Split& split)
   {
-    /* allocate leaf node */
-    size_t blocks = primTy.blocks(split.pinfo.size());
-    char* leaf = bvh->allocPrimitiveBlocks(threadIndex,0,blocks);
-    assert(blocks <= (size_t)BVH4::maxLeafBlocks);
+    size_t N = bvh->primTy[0]->blocks(TriRefList::block_iterator_unsafe(prims).size());
 
-    /* insert all triangles */
-    atomic_set<PrimRefBlock>::block_iterator_unsafe iter(prims);
-    for (size_t i=0; i<blocks; i++) {
-      primTy.pack(leaf+i*primTy.bytes,iter,geometry);
+    if (N > (size_t)BVH4::maxLeafBlocks) {
+      //std::cout << "WARNING: Loosing " << N-BVH4::maxLeafBlocks << " primitives during build!" << std::endl;
+      std::cout << "!" << std::flush;
+      N = (size_t)BVH4::maxLeafBlocks;
     }
-    assert(!iter);
+    //size_t numGeneratedPrimsOld = atomic_add(&numGeneratedPrims,N); 
+    //if (numGeneratedPrimsOld%10000 > (numGeneratedPrimsOld+N)%10000) std::cout << "." << std::flush; 
+    //assert(N <= (size_t)BVH4::maxLeafBlocks);
+    Scene* scene = (Scene*) geometry;
+
+    if (bvh->primTy[0] == &SceneTriangle4::type) 
+    {
+      char* leaf = bvh->allocPrimitiveBlocks(threadIndex,0,N);
+
+      TriRefList::block_iterator_unsafe iter(prims);
+      for (size_t j=0; j<N; j++) 
+      {
+        void* This = leaf+j*bvh->primTy[0]->bytes;
+        ssei geomID = -1, primID = -1, mask = -1;
+        sse3f v0 = zero, v1 = zero, v2 = zero;
     
-    /* free all primitive blocks */
-    while (atomic_set<PrimRefBlock>::item* block = prims.take())
-      alloc.free(threadIndex,block);
+        for (size_t i=0; i<4 && iter; i++, iter++)
+        {
+          const PrimRef& prim = *iter;
+          const TriangleMesh* mesh = scene->getTriangleMesh(prim.geomID());
+          const TriangleMesh::Triangle& tri = mesh->triangle(prim.primID());
+          const Vec3fa& p0 = mesh->vertex(tri.v[0]);
+          const Vec3fa& p1 = mesh->vertex(tri.v[1]);
+          const Vec3fa& p2 = mesh->vertex(tri.v[2]);
+          geomID [i] = prim.geomID();
+          primID [i] = prim.primID();
+          mask   [i] = mesh->mask;
+          v0.x[i] = p0.x; v0.y[i] = p0.y; v0.z[i] = p0.z;
+          v1.x[i] = p1.x; v1.y[i] = p1.y; v1.z[i] = p1.z;
+          v2.x[i] = p2.x; v2.y[i] = p2.y; v2.z[i] = p2.z;
+        }
+        new (This) Triangle4(v0,v1,v2,geomID,primID,mask);
+      }
+      assert(!iter);
+    
+      /* free all primitive blocks */
+      while (TriRefList::item* block = prims.take())
+        allocTriRefs.free(threadIndex,block);
         
-    return bvh->encodeLeaf(leaf,blocks,0);
+      return bvh->encodeLeaf(leaf,N,0);
+    } 
+    else 
+      throw std::runtime_error("unknown primitive type");
   }
 
-  typename BVH4Builder2::NodeRef BVH4Builder2::recurse(size_t threadIndex, size_t depth, atomic_set<PrimRefBlock>& prims, const ObjectSplitBinner::Split& split)
+  typename BVH4Builder2::NodeRef BVH4Builder2::recurse(size_t threadIndex, size_t depth, TriRefList& prims, const ObjectSplitBinner::Split& split)
   {
     /*! compute leaf and split cost */
     const float leafSAH  = primTy.intCost*split.pinfo.sah();
     const float splitSAH = BVH4::travCost*halfArea(split.pinfo.geomBounds)+primTy.intCost*split.sah();
-    assert(atomic_set<PrimRefBlock>::block_iterator_unsafe(prims).size() == split.pinfo.size());
+    assert(TriRefList::block_iterator_unsafe(prims).size() == split.pinfo.size());
     assert(split.pinfo.size() == 0 || leafSAH >= 0 && splitSAH >= 0);
     
     /*! create a leaf node when threshold reached or SAH tells us to stop */
@@ -326,7 +363,7 @@ namespace embree
     }
     
     /*! initialize child list */
-    atomic_set<PrimRefBlock> cprims[BVH4::N]; cprims[0] = prims;
+    TriRefList cprims[BVH4::N]; cprims[0] = prims;
     ObjectSplitBinner::Split                    csplit[BVH4::N]; csplit[0] = split;
     size_t numChildren = 1;
     
@@ -346,8 +383,8 @@ namespace embree
       if (bestChild == -1) break;
       
       /*! perform best found split and find new splits */
-      atomic_set<PrimRefBlock> lprims,rprims;
-      csplit[bestChild].split(threadIndex,&alloc,cprims[bestChild],lprims,rprims);
+      TriRefList lprims,rprims;
+      csplit[bestChild].split(threadIndex,&allocTriRefs,cprims[bestChild],lprims,rprims);
       ObjectSplitBinner lheuristic(lprims); 
       ObjectSplitBinner rheuristic(rprims);
       cprims[bestChild  ] = lprims; csplit[bestChild  ] = lheuristic.split;
