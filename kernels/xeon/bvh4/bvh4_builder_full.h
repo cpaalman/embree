@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "bvh4.h"
 #include "geometry/primitive.h"
 #include "geometry/bezier1.h"
 #include "geometry/triangle1v.h"
@@ -152,7 +153,7 @@ namespace embree
 
     public:
       __forceinline friend bool operator< (const BuildTask& a, const BuildTask& b) {
-        return area(a.bounds.bounds) < area(b.bounds.bounds);
+        return halfArea(a.bounds.bounds) < halfArea(b.bounds.bounds);
       }
 
     public:
@@ -179,7 +180,7 @@ namespace embree
       
       /*! calculates standard surface area heuristic for the split */
       __forceinline float standardSAH() const {
-        return BVH4::intCost*float(num0)*embree::area(bounds0.bounds) + BVH4::intCost*float(num1)*embree::area(bounds1.bounds);
+        return BVH4::intCost*float(num0)*embree::halfArea(bounds0.bounds) + BVH4::intCost*float(num1)*embree::halfArea(bounds1.bounds);
       }
 
       __forceinline bool operator() (const Triangle1v& prim) const

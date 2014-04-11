@@ -14,13 +14,11 @@
 // limitations under the License.                                           //
 // ======================================================================== //
 
-#define BVH4HAIR_COMPRESS_ALIGNED_NODES 0
-#define BVH4HAIR_COMPRESS_UNALIGNED_NODES 0
-
-#include "bvh4.h"
 #include "bvh4_builder_full.h"
 #include "bvh4_statistics.h"
 #include "common/scene_bezier_curves.h"
+#include "common/scene_triangle_mesh.h"
+#include "geometry/bezier1.h"
 #include "geometry/triangle4.h"
 
 namespace embree
@@ -32,36 +30,36 @@ namespace embree
   {
     if (BVH4::maxLeafBlocks < this->maxLeafSize) 
       this->maxLeafSize = BVH4::maxLeafBlocks;
-
-    enableAlignedObjectSplits = false;
-    enableAlignedSpatialSplits = false;
-    enableUnalignedObjectSplits = false;
-    enableUnalignedSpatialSplits = false;
-    enableStrandSplits = false;
-    enablePreSubdivision = 0;
-    
-    for (size_t i=0; i<g_hair_accel_mode.size();)
-    {
-      if      (g_hair_accel_mode.substr(i,2) == "P0" ) { enablePreSubdivision = 0; i+=2; } 
-      else if (g_hair_accel_mode.substr(i,2) == "P1" ) { enablePreSubdivision = 1; i+=2; } 
-      else if (g_hair_accel_mode.substr(i,2) == "P2" ) { enablePreSubdivision = 2; i+=2; } 
-      else if (g_hair_accel_mode.substr(i,2) == "P3" ) { enablePreSubdivision = 3; i+=2; } 
-      else if (g_hair_accel_mode.substr(i,2) == "P4" ) { enablePreSubdivision = 4; i+=2; } 
-      else if (g_hair_accel_mode.substr(i,2) == "aO" ) { enableAlignedObjectSplits = true; i+=2; } 
-      else if (g_hair_accel_mode.substr(i,2) == "uO" ) { enableUnalignedObjectSplits = true; i+=2; } 
-      else if (g_hair_accel_mode.substr(i,3) == "auO" ) { enableAlignedObjectSplits = enableUnalignedObjectSplits = true; i+=3; } 
-      else if (g_hair_accel_mode.substr(i,3) == "uST") { enableStrandSplits = true; i+=3; } 
-      else if (g_hair_accel_mode.substr(i,3) == "aSP") { enableAlignedSpatialSplits = true; i+=3; } 
-      else if (g_hair_accel_mode.substr(i,3) == "uSP") { enableUnalignedSpatialSplits = true; i+=3; } 
-      else if (g_hair_accel_mode.substr(i,4) == "auSP") { enableAlignedSpatialSplits = enableUnalignedSpatialSplits = true; i+=4; } 
-      else throw std::runtime_error("invalid hair accel mode");
-    }
   }
 
   void BVH4BuilderFull::build(size_t threadIndex, size_t threadCount) 
   {
     /* fast path for empty BVH */
-    size_t numPrimitives = scene->numCurves << enablePreSubdivision;
+    //size_t numPrimitives = scene->numCurves << enablePreSubdivision;
+    //size_t numPrimitives = scene->numCurves + scene->numTriangleMeshes0;
+
+    size_t numBeziers = 0;
+    size_t numTriangles = 0;
+    for (size_t i=0; i<scene->size(); i++) 
+    {
+      Geometry* geom = scene->get(i);
+      if (!geom->isEnabled()) continue;
+
+      if (geom->type == BEZIER_CURVES) 
+      {
+        BezierCurves* set = (BezierCurves*) geom;
+        numBeziers  += set->numCurves;
+      }
+
+      if (geom->type == TRIANGLE_MESH) 
+      {
+        TriangleMesh* set = (TriangleMesh*) geom;
+        if (set->numTimeSteps != 1) continue;
+        numTriangles += set->numTriangles;
+      }
+    }
+    size_t numPrimitives = numBeziers + numTriangles;
+
     bvh->init(numPrimitives+(size_t)(g_hair_builder_replication_factor*numPrimitives));
     if (numPrimitives == 0) return;
     numGeneratedPrims = 0;
@@ -75,13 +73,6 @@ namespace embree
     double t0 = 0.0;
     if (g_verbose >= 2) 
     {
-      PRINT(enableAlignedObjectSplits);
-      PRINT(enableAlignedSpatialSplits);
-      PRINT(enableUnalignedObjectSplits);
-      PRINT(enableUnalignedSpatialSplits);
-      PRINT(enableStrandSplits);
-      PRINT(enablePreSubdivision);
-
       std::cout << "building " << bvh->name() + " using BVH4BuilderFull ..." << std::flush;
       t0 = getSeconds();
     }
@@ -89,9 +80,10 @@ namespace embree
     size_t N = 0;
     float r = 0;
 
-    /* create initial curve list */
+    /* create initial primitive lists */
     BBox3fa bounds = empty;
-    size_t numTriangles = 0;
+    //size_t numBeziers = 0;
+    //size_t numTriangles = 0;
     size_t numVertices = 0;
     TriRefList tris;
     BezierRefList beziers;
@@ -99,8 +91,11 @@ namespace embree
     {
       Geometry* geom = scene->get(i);
       if (!geom->isEnabled()) continue;
-      if (geom->type == BEZIER_CURVES) {
+
+      if (geom->type == BEZIER_CURVES) 
+      {
         BezierCurves* set = (BezierCurves*) geom;
+        //numBeziers  += set->numCurves;
         numVertices += set->numVertices;
         for (size_t j=0; j<set->numCurves; j++) {
           const int ofs = set->curve(j);
@@ -118,12 +113,13 @@ namespace embree
           }
         }
       }
+
       if (geom->type == TRIANGLE_MESH) 
       {
         TriangleMesh* set = (TriangleMesh*) geom;
         if (set->numTimeSteps != 1) continue;
-        numTriangles += set->numTriangles;
-        numVertices += set->numVertices;
+        //numTriangles += set->numTriangles;
+        numVertices  += set->numVertices;
         for (size_t j=0; j<set->numTriangles; j++) {
           const TriangleMesh::Triangle tri = set->triangle(j);
           const Vec3fa& p0 = set->vertex(tri.v[0]);
@@ -141,7 +137,7 @@ namespace embree
       }
     }
 
-    bvh->numPrimitives = scene->numCurves + numTriangles;
+    bvh->numPrimitives = numBeziers + numTriangles;
     bvh->numVertices = 0;
     if (bvh->primTy[0] == &SceneBezier1i::type) bvh->numVertices = numVertices; // FIXME
 
@@ -416,9 +412,9 @@ namespace embree
     {
       count += counts[i];
       rCounts[i] = count;
-      bx.extend(bounds[i][0]); rAreas[i][0] = area(bx);
-      by.extend(bounds[i][1]); rAreas[i][1] = area(by);
-      bz.extend(bounds[i][2]); rAreas[i][2] = area(bz);
+      bx.extend(bounds[i][0]); rAreas[i][0] = halfArea(bx);
+      by.extend(bounds[i][1]); rAreas[i][1] = halfArea(by);
+      bz.extend(bounds[i][2]); rAreas[i][2] = halfArea(bz);
     }
     
     /* sweep from left to right and compute SAH */
@@ -427,9 +423,9 @@ namespace embree
     for (size_t i=1; i<BINS; i++, ii+=1)
     {
       count += counts[i-1];
-      bx.extend(bounds[i-1][0]); float Ax = area(bx);
-      by.extend(bounds[i-1][1]); float Ay = area(by);
-      bz.extend(bounds[i-1][2]); float Az = area(bz);
+      bx.extend(bounds[i-1][0]); float Ax = halfArea(bx);
+      by.extend(bounds[i-1][1]); float Ay = halfArea(by);
+      bz.extend(bounds[i-1][2]); float Az = halfArea(bz);
       const ssef lArea = ssef(Ax,Ay,Az,Az);
       const ssef rArea = rAreas[i];
       const ssei lCount = (count     +ssei(3)) >> 2;
@@ -465,7 +461,7 @@ namespace embree
     }
 
     if (split.dim == -1) {
-      split.num0 = split.num1 = 1;
+      split.num0 = split.num1 = 1; // to avoid NANs in SAH calculation
       split.bounds0 = split.bounds1 = BBox3fa(inf);
       return split;
     }
@@ -496,7 +492,6 @@ namespace embree
     assert(rnum == num1);
   }
   
-
   __forceinline BVH4BuilderFull::FallBackSplit BVH4BuilderFull::FallBackSplit::find(size_t threadIndex, BVH4BuilderFull* parent, 
                                                                                     TriRefList& tris,    BezierRefList& beziers, 
                                                                                     TriRefList& ltris_o, BezierRefList& lbeziers_o,
@@ -572,7 +567,6 @@ namespace embree
 
   BVH4::NodeRef BVH4BuilderFull::leaf(size_t threadIndex, size_t depth, TriRefList& prims, const NAABBox3fa& bounds)
   {
-    //size_t N = end-begin;
     size_t N = bvh->primTy[0]->blocks(TriRefList::block_iterator_unsafe(prims).size());
 
     if (N > (size_t)BVH4::maxLeafBlocks) {
@@ -592,7 +586,6 @@ namespace embree
       for (size_t j=0; j<N; j++) 
       {
         void* This = leaf+j*bvh->primTy[0]->bytes;
-    
         ssei geomID = -1, primID = -1, mask = -1;
         sse3f v0 = zero, v1 = zero, v2 = zero;
     
@@ -627,7 +620,6 @@ namespace embree
 
   BVH4::NodeRef BVH4BuilderFull::leaf(size_t threadIndex, size_t depth, BezierRefList& prims, const NAABBox3fa& bounds)
   {
-    //size_t N = end-begin;
     size_t N = BezierRefList::block_iterator_unsafe(prims).size();
 
     if (N > (size_t)BVH4::maxLeafBlocks) {
@@ -638,8 +630,10 @@ namespace embree
     size_t numGeneratedPrimsOld = atomic_add(&numGeneratedPrims,N); 
     if (numGeneratedPrimsOld%10000 > (numGeneratedPrimsOld+N)%10000) std::cout << "." << std::flush; 
     //assert(N <= (size_t)BVH4::maxLeafBlocks);
-    if (bvh->primTy[1] == &Bezier1Type::type) { 
-      Bezier1* leaf = (Bezier1*) bvh->allocPrimitiveBlocks(threadIndex,0,N);
+
+    if (bvh->primTy[1] == &Bezier1Type::type) 
+    { 
+      Bezier1* leaf = (Bezier1*) bvh->allocPrimitiveBlocks(threadIndex,1,N);
       BezierRefList::block_iterator_unsafe iter(prims);
       for (size_t i=0; i<N; i++) { leaf[i] = *iter; iter++; }
       assert(!iter);
@@ -650,8 +644,9 @@ namespace embree
 
       return bvh->encodeLeaf((char*)leaf,N,1);
     } 
-    else if (bvh->primTy[1] == &SceneBezier1i::type) {
-      Bezier1i* leaf = (Bezier1i*) bvh->allocPrimitiveBlocks(threadIndex,0,N);
+    else if (bvh->primTy[1] == &SceneBezier1i::type) 
+    {
+      Bezier1i* leaf = (Bezier1i*) bvh->allocPrimitiveBlocks(threadIndex,1,N);
       BezierRefList::block_iterator_unsafe iter(prims);
       for (size_t i=0; i<N; i++) {
         const Bezier1& curve = *iter; iter++;
@@ -691,19 +686,23 @@ namespace embree
                               TriRefList& rtris_o, BezierRefList& rbeziers_o, size_t& rsize,
                               bool& isAligned)
   {
+    //PRINT(depth);
     /* variable to track the SAH of the best splitting approach */
-    bool enableSpatialSplits = remainingReplications > 0;
+    //bool enableSpatialSplits = remainingReplications > 0;
     const int travCostAligned = isAligned ? BVH4::travCostAligned : BVH4::travCostUnaligned;
-    const float leafSAH = BVH4::intCost*float(size)*embree::area(bounds.bounds);
+    const size_t blocks = (size+3)/4;
+    const float leafSAH = BVH4::intCost*float(blocks)*embree::halfArea(bounds.bounds);
+    //PRINT(leafSAH);
     float bestSAH = leafSAH;
     
     /* perform standard binning in aligned space */
     ObjectSplit alignedObjectSplit = ObjectSplit::find(threadIndex,depth,this,tris,beziers,one);
-    float alignedObjectSAH = travCostAligned*embree::area(bounds.bounds) + alignedObjectSplit.standardSAH();
+    float alignedObjectSAH = travCostAligned*halfArea(bounds.bounds) + bvh->primTy[0]->intCost*alignedObjectSplit.cost; // + alignedObjectSplit.standardSAH();
+    //PRINT(alignedObjectSAH);
     bestSAH = min(bestSAH,alignedObjectSAH);
 
     /* perform fallback split */
-    if (bestSAH == float(inf)) {
+    if (bestSAH == leafSAH) {
       if (size <= maxLeafSize) return false;
       numFallbackSplits++;
       const FallBackSplit fallbackSplit = FallBackSplit::find(threadIndex,this,tris,beziers,ltris_o,lbeziers_o,rtris_o,rbeziers_o);
@@ -761,7 +760,7 @@ namespace embree
         size_t Ntris    = TriRefList::block_iterator_unsafe(ctris[i]).size(); // FIXME: slow
         size_t Nbeziers = BezierRefList::block_iterator_unsafe(cbeziers[i]).size(); // FIXME: slow
         size_t N = Ntris + Nbeziers;
-        float A = embree::area(cbounds[i].bounds);
+        float A = embree::halfArea(cbounds[i].bounds);
         if (N <= minLeafSize) continue;  
         if (isleaf[i]) continue;
         if (A > bestArea) { bestChild = i; bestArea = A; }

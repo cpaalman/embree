@@ -81,7 +81,9 @@ namespace embree
   Builder* BVH4BuilderSpatialSplit4 (void* bvh, BuildSource* source, void* geometry, const size_t minLeafSize, const size_t maxLeafSize);
   Builder* BVH4BuilderSpatialSplit8 (void* bvh, BuildSource* source, void* geometry, const size_t minLeafSize, const size_t maxLeafSize);
   
-  Builder* BVH4BuilderHair_ (BVH4* bvh, Scene* scene);
+  Builder* BVH4BuilderHair_(BVH4* bvh, Scene* scene);
+  Builder* BVH4BuilderFull_(BVH4* bvh, Scene* scene);
+  Builder* BVH4Builder2ObjectSplit4 (void* bvh, BuildSource* source, void* geometry, const size_t minLeafSize, const size_t maxLeafSize);
 
   void BVH4Register () 
   {
@@ -307,6 +309,8 @@ namespace embree
     if      (g_builder == "default") builder = BVH4BuilderObjectSplit4(accel,&scene->flat_triangle_source_1,scene,1,inf);
     else if (g_builder == "tris"   ) builder = BVH4BuilderObjectSplit4(accel,&scene->flat_triangle_source_1,scene,1,inf);
     else if (g_builder == "hair"   ) builder = BVH4BuilderHair_(accel,scene);
+    else if (g_builder == "full"   ) builder = BVH4BuilderFull_(accel,scene);
+    else if (g_builder == "builder2") builder = BVH4Builder2ObjectSplit4(accel,&scene->flat_triangle_source_1,scene,1,inf);
     else throw std::runtime_error("unknown hair builder");
     return new AccelInstance(accel,builder,intersectors);
   }

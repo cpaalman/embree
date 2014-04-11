@@ -116,6 +116,7 @@ IF (TARGET_AVX)
   bvh4hair/bvh4hair_builder2.cpp       # FIXME: should be in SSE2 section
   bvh4hair/bvh4hair_statistics.cpp    # FIXME: should be in SSE2 section
 
+  bvh4/bvh4_builder2.cpp             # FIXME: should be in SSE2 section
   bvh4/bvh4_builder_full.cpp       # FIXME: should be in SSE2 section
   bvh4/bvh4_builder_hair.cpp       # FIXME: should be in SSE2 section
 
