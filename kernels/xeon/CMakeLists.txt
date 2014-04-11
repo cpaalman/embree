@@ -46,6 +46,7 @@ ADD_ISPC_LIBRARY(embree SHARED
   ../common/scene_bezier_curves.cpp
   
   builders/heuristic_binning.cpp
+  builders/heuristic_binning2.cpp
   builders/heuristic_spatial.cpp
   builders/splitter.cpp
   builders/splitter_fallback.cpp

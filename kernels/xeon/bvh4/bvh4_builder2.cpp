@@ -18,10 +18,8 @@
 #include "bvh4_builder2.h"
 #include "bvh4_statistics.h"
 
-#include "builders/heuristics.h"
+#include "builders/heuristic_binning2.h"
 #include "builders/splitter_fallback.h"
-
-#define ROTATE_TREE 1
 
 #include "common/scene_triangle_mesh.h"
 
@@ -55,8 +53,6 @@ namespace embree
     size_t numTriangles = 0;
     size_t numVertices = 0;
     atomic_set<PrimRefBlock> tris;
-    BBox3fa geomBounds = empty;
-    BBox3fa centBounds = empty;
     Scene* scene = (Scene*)geometry;
     for (size_t i=0; i<scene->size(); i++) 
     {
@@ -71,8 +67,6 @@ namespace embree
         //numVertices  += set->numVertices;
         for (size_t j=0; j<set->numTriangles; j++) {
           const BBox3fa bounds = set->bounds(j);
-          geomBounds.extend(bounds);
-          centBounds.extend(center2(bounds));
           const PrimRef prim = PrimRef(bounds,i,j);
            atomic_set<PrimRefBlock>::item* block = tris.head();
           if (block == NULL || !block->insert(prim)) {
@@ -84,21 +78,16 @@ namespace embree
     }
     
     /* perform binning */
-    PrimInfo pinfo(numTriangles,geomBounds,centBounds);
-    Heuristic heuristic(pinfo,source);
-    atomic_set<PrimRefBlock>::iterator i=tris;
-    while (PrimRefBlock* block = i.next())
-      heuristic.bin(block->base(),block->size());
-    
+    Heuristic heuristic; heuristic.add(tris);
     Split split; heuristic.best(split);
 
     /* perform binning */
     bvh->numPrimitives = numTriangles;
-    bvh->bounds = geomBounds;
+    bvh->bounds = split.pinfo.geomBounds;
     if (primTy.needVertices) bvh->numVertices = numVertices;
     else                     bvh->numVertices = 0;
 
-    bvh->root = recurse(threadIndex,1,tris,pinfo,split);
+    bvh->root = recurse(threadIndex,1,tris,split);
 
     /* free all temporary blocks */
     Alloc::global.clear();
@@ -114,10 +103,10 @@ namespace embree
   }
   
   template<typename Heuristic>
-  typename BVH4Builder2<Heuristic>::NodeRef BVH4Builder2<Heuristic>::createLeaf(size_t threadIndex, atomic_set<PrimRefBlock>& prims, const PrimInfo& pinfo)
+  typename BVH4Builder2<Heuristic>::NodeRef BVH4Builder2<Heuristic>::createLeaf(size_t threadIndex, atomic_set<PrimRefBlock>& prims, const Split& split)
   {
     /* allocate leaf node */
-    size_t blocks = primTy.blocks(pinfo.size());
+    size_t blocks = primTy.blocks(split.size());
     char* leaf = bvh->allocPrimitiveBlocks(threadIndex,0,blocks);
     assert(blocks <= (size_t)BVH4::maxLeafBlocks);
 
@@ -136,22 +125,19 @@ namespace embree
   }
 
   template<typename Heuristic>
-  typename BVH4Builder2<Heuristic>::NodeRef BVH4Builder2<Heuristic>::recurse(size_t threadIndex, size_t depth, atomic_set<PrimRefBlock>& prims, const PrimInfo& pinfo, const Split& split)
+  typename BVH4Builder2<Heuristic>::NodeRef BVH4Builder2<Heuristic>::recurse(size_t threadIndex, size_t depth, atomic_set<PrimRefBlock>& prims, const Split& split)
   {
     /*! compute leaf and split cost */
-    const float leafSAH  = primTy.intCost*pinfo.sah();
-    const float splitSAH = BVH4::travCost*halfArea(pinfo.geomBounds)+primTy.intCost*split.sah();
-    assert(atomic_set<PrimRefBlock>::block_iterator_unsafe(prims).size() == pinfo.size());
-    assert(pinfo.size() == 0 || leafSAH >= 0 && splitSAH >= 0);
+    const float leafSAH  = split.leafSAH(primTy.intCost);
+    const float splitSAH = split.splitSAH(BVH4::travCost,primTy.intCost);
     
     /*! create a leaf node when threshold reached or SAH tells us to stop */
-    if (pinfo.size() <= minLeafSize || depth > BVH4::maxBuildDepth || (pinfo.size() <= maxLeafSize && leafSAH <= splitSAH)) {
-      return createLeaf(threadIndex,prims,pinfo);
+    if (split.size() <= minLeafSize || depth > BVH4::maxBuildDepth || (split.size() <= maxLeafSize && leafSAH <= splitSAH)) {
+      return createLeaf(threadIndex,prims,split);
     }
     
     /*! initialize child list */
     atomic_set<PrimRefBlock> cprims[BVH4::N]; cprims[0] = prims;
-    PrimInfo                 cinfo [BVH4::N]; cinfo [0] = pinfo;
     Split                    csplit[BVH4::N]; csplit[0] = split;
     size_t numChildren = 1;
     
@@ -163,28 +149,35 @@ namespace embree
       ssize_t bestChild = -1;
       for (size_t i=0; i<numChildren; i++) 
       {
-        float dSAH = csplit[i].sah()-cinfo[i].sah();
-        if (cinfo[i].size() <= minLeafSize) continue; 
-        if (cinfo[i].size() > maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
+        float dSAH = csplit[i].splitSAH(BVH4::travCost,primTy.intCost)-csplit[i].leafSAH(primTy.intCost);
+        if (csplit[i].size() <= minLeafSize) continue; 
+        if (csplit[i].size() > maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
         if (dSAH <= bestSAH) { bestChild = i; bestSAH = dSAH; }
       }
       if (bestChild == -1) break;
       
-      /*! perform best found split and find new splits */
-      SplitterNormal splitter(threadIndex,&alloc,source,cprims[bestChild],cinfo[bestChild],csplit[bestChild]);
-      cprims[bestChild  ] = splitter.lprims; cinfo[bestChild  ] = splitter.linfo; csplit[bestChild  ] = splitter.lsplit;
-      cprims[numChildren] = splitter.rprims; cinfo[numChildren] = splitter.rinfo; csplit[numChildren] = splitter.rsplit;
+      atomic_set<PrimRefBlock> lprims, rprims;
+      csplit[bestChild].split(threadIndex,&alloc,cprims[bestChild],lprims,rprims);
+      
+      Heuristic lheuristic; lheuristic.add(lprims);
+      Heuristic rheuristic; rheuristic.add(rprims);
+      
+      Split lsplit; lheuristic.best(lsplit);
+      Split rsplit; rheuristic.best(rsplit);
+
+      cprims[bestChild  ] = lprims; csplit[bestChild  ] = lsplit;
+      cprims[numChildren] = rprims; csplit[numChildren] = rsplit;
       numChildren++;
       
     } while (numChildren < BVH4::N);
     
     /*! create an inner node */
     BVH4::UANode* node = bvh->allocUANode(threadIndex);
-    for (size_t i=0; i<numChildren; i++) node->set(i,cinfo[i].geomBounds,recurse(threadIndex,depth+1,cprims[i],cinfo[i],csplit[i]));
+    for (size_t i=0; i<numChildren; i++) node->set(i,csplit[i].pinfo.geomBounds,recurse(threadIndex,depth+1,cprims[i],csplit[i]));
     return bvh->encodeNode(node);
   }
   
   Builder* BVH4Builder2ObjectSplit4 (void* accel, BuildSource* source, void* geometry, const size_t minLeafSize, const size_t maxLeafSize) {
-    return new BVH4Builder2<HeuristicBinning<2> >((BVH4*)accel,source,geometry,minLeafSize,maxLeafSize);
+    return new BVH4Builder2<HeuristicBinning2<2> >((BVH4*)accel,source,geometry,minLeafSize,maxLeafSize);
   }
 }
