@@ -657,7 +657,41 @@ namespace embree
       std::cout << BVH4Statistics(bvh).str();
     }
   }
-  
+
+  void BVH4Builder2::heuristic(TriRefList& tris, BezierRefList& beziers, ObjectSplitBinner::Split& split)
+  {
+    /* perform binning */
+    ObjectSplitBinner heuristic(tris,beziers); 
+    split = heuristic.split;
+
+#if 0
+    float bestSAH = inf;
+    ObjectBinning object_binning_aligned(tris,beziers);
+    bestSAH = min(bestSAH,object_binning_aligned.sah());
+
+    SpatialBinning spatial_binning_aligned(tris,beziers);
+    bestSAH = min(bestSAH,spatial_binning_aligned.sah());
+    
+    Space hairspace = computeSpace(tris,beziers);
+    ObjectBinning object_binning_unaligned(tris,beziers,hairspace);
+    bestSAH = min(bestSAH,object_binning_unaligned.sah());
+    
+    SpatialBinning spatial_binning_unaligned(tris,beziers,hairspace);
+    bestSAH = min(bestSAH,spatial_binning_unaligned.sah());
+
+    Split split;
+    if (bestSAH == object_binning_aligned.sah()) 
+      new (&split) Split(object_binning_aligned.split);
+    else if (bestSAH == spatial_binning_aligned.sah()) 
+      new (&split) Split(spatial_binning_aligned.split);
+    else if (bestSAH == object_binning_unaligned.sah()) 
+      new (&split) Split(object_binning_unaligned.split);
+    else if (bestSAH == spatial_binning_unaligned.sah()) 
+      new (&split) Split(spatial_binning_unaligned.split);
+    
+#endif
+  }
+
   BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, TriRefList& prims, const ObjectSplitBinner::Split& split)
   {
     size_t N = bvh->primTy[0]->blocks(TriRefList::block_iterator_unsafe(prims).size());
@@ -806,17 +840,20 @@ namespace embree
       /*! perform best found split and find new splits */
       TriRefList    ltris,   rtris;    csplit[bestChild].split(threadIndex,&allocTriRefs,   ctris[bestChild],   ltris,   rtris);
       BezierRefList lbeziers,rbeziers; csplit[bestChild].split(threadIndex,&allocBezierRefs,cbeziers[bestChild],lbeziers,rbeziers);
-      ObjectSplitBinner lheuristic(ltris,lbeziers); 
-      ObjectSplitBinner rheuristic(rtris,rbeziers);
-      ctris[bestChild  ] = ltris; cbeziers[bestChild  ] = lbeziers; csplit[bestChild  ] = lheuristic.split;
-      ctris[numChildren] = rtris; cbeziers[numChildren] = rbeziers; csplit[numChildren] = rheuristic.split;
+      //ObjectSplitBinner lheuristic(ltris,lbeziers); 
+      //ObjectSplitBinner rheuristic(rtris,rbeziers);
+      ObjectSplitBinner::Split lsplit; heuristic(ltris,lbeziers,lsplit);
+      ObjectSplitBinner::Split rsplit; heuristic(rtris,rbeziers,rsplit);
+      ctris[bestChild  ] = ltris; cbeziers[bestChild  ] = lbeziers; csplit[bestChild  ] = lsplit;
+      ctris[numChildren] = rtris; cbeziers[numChildren] = rbeziers; csplit[numChildren] = rsplit;
       numChildren++;
       
     } while (numChildren < BVH4::N);
     
     /*! create an inner node */
     BVH4::UANode* node = bvh->allocUANode(threadIndex);
-    for (size_t i=0; i<numChildren; i++) node->set(i,csplit[i].pinfo.geomBounds,recurse(threadIndex,depth+1,ctris[i],cbeziers[i],csplit[i]));
+    for (size_t i=0; i<numChildren; i++) 
+      node->set(i,csplit[i].pinfo.geomBounds,recurse(threadIndex,depth+1,ctris[i],cbeziers[i],csplit[i]));
     return bvh->encodeNode(node);
   }
   

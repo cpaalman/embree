@@ -329,6 +329,8 @@ namespace embree
 
     NodeRef recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const ObjectSplitBinner::Split& split);
 
+    void heuristic(TriRefList& tris, BezierRefList& beziers, ObjectSplitBinner::Split& split);
+
   private:
     BuildSource* source;      //!< build source interface
     void* geometry;           //!< input geometry
