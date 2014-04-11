@@ -162,20 +162,16 @@ namespace embree
     {
     public:
       __forceinline PrimInfo () 
-        : num(0), geomBounds(empty), centBounds(empty) {}
+        : num(0), numTriangles(0), numBeziers(0), geomBounds(empty), centBounds(empty) {}
 
       /*! returns the number of primitives */
       __forceinline size_t size() const { 
         return num; 
       }
 
-      /*! return the surface area heuristic when creating a leaf */
-      __forceinline float sah () const { 
-        return halfArea(geomBounds)*blocks(num); 
-      }
-
     public:
       size_t num;          //!< number of primitives
+      size_t numTriangles, numBeziers;
       BBox3fa geomBounds;   //!< geometry bounds of primitives
       BBox3fa centBounds;   //!< centroid bounds of primitives
     };
@@ -223,8 +219,10 @@ namespace embree
       /*! create an invalid split by default */
       __forceinline Split () : dim(0), pos(0), cost(inf) {}
       
+      __forceinline float leafSAH() const { return halfArea(pinfo.geomBounds)*(blocks(pinfo.numTriangles) + pinfo.numBeziers); }
+
       /*! return SAH cost of performing the split */
-      __forceinline float sah() const { return cost; } 
+      __forceinline float splitSAH() const { return cost; } 
 
       /*! splitting of the primitive if required */
       __forceinline void split(const PrimRef& prim, PrimRef& lprim_o, PrimRef& rprim_o) const {
@@ -285,8 +283,9 @@ namespace embree
     Mapping mapping;               //!< mapping from geometry to the bins
     
     /* initialize binning counter and bounds */
-    Vec3ia   counts    [maxBins];    //< number of primitives mapped to bin
-    BBox3fa geomBounds[maxBins][4]; //< bounds for every bin in every dimension
+    Vec3ia  triCounts[maxBins];    
+    Vec3ia  bezierCounts[maxBins];    
+    BBox3fa geomBounds[maxBins][4]; 
 
     Split split;
   };

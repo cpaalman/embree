@@ -70,7 +70,7 @@ namespace embree
   {
     new (&mapping) Mapping(pinfo);
     for (size_t i=0; i<mapping.size(); i++) {
-      counts[i] = 0;
+      triCounts[i] = bezierCounts[i] = 0;
       geomBounds[i][0] = geomBounds[i][1] = geomBounds[i][2] = empty;
     }
   }
@@ -100,6 +100,7 @@ namespace embree
       centBounds.extend(center2(bounds));
     }
     pinfo.num += num;
+    pinfo.numTriangles += num;
     pinfo.geomBounds.extend(geomBounds);
     pinfo.centBounds.extend(centBounds);
   }
@@ -115,6 +116,7 @@ namespace embree
       centBounds.extend(center2(bounds));
     }
     pinfo.num += num;
+    pinfo.numBeziers += num;
     pinfo.geomBounds.extend(geomBounds);
     pinfo.centBounds.extend(centBounds);
   }
@@ -130,14 +132,14 @@ namespace embree
       const BBox3fa prim1 = prims[i+1].bounds(); const Vec3ia bin1 = mapping.bin(prim1); const Vec3fa center1 = Vec3fa(center2(prim1));
       
       /*! increase bounds for bins for even primitive */
-      const int b00 = bin0.x; counts[b00][0]++; geomBounds[b00][0].extend(prim0); 
-      const int b01 = bin0.y; counts[b01][1]++; geomBounds[b01][1].extend(prim0); 
-      const int b02 = bin0.z; counts[b02][2]++; geomBounds[b02][2].extend(prim0); 
+      const int b00 = bin0.x; triCounts[b00][0]++; geomBounds[b00][0].extend(prim0); 
+      const int b01 = bin0.y; triCounts[b01][1]++; geomBounds[b01][1].extend(prim0); 
+      const int b02 = bin0.z; triCounts[b02][2]++; geomBounds[b02][2].extend(prim0); 
       
       /*! increase bounds of bins for odd primitive */
-      const int b10 = bin1.x; counts[b10][0]++; geomBounds[b10][0].extend(prim1); 
-      const int b11 = bin1.y; counts[b11][1]++; geomBounds[b11][1].extend(prim1); 
-      const int b12 = bin1.z; counts[b12][2]++; geomBounds[b12][2].extend(prim1); 
+      const int b10 = bin1.x; triCounts[b10][0]++; geomBounds[b10][0].extend(prim1); 
+      const int b11 = bin1.y; triCounts[b11][1]++; geomBounds[b11][1].extend(prim1); 
+      const int b12 = bin1.z; triCounts[b12][2]++; geomBounds[b12][2].extend(prim1); 
     }
     
     /*! for uneven number of primitives */
@@ -147,9 +149,9 @@ namespace embree
       const BBox3fa prim0 = prims[i].bounds(); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
       
       /*! increase bounds of bins */
-      const int b00 = bin0.x; counts[b00][0]++; geomBounds[b00][0].extend(prim0); 
-      const int b01 = bin0.y; counts[b01][1]++; geomBounds[b01][1].extend(prim0); 
-      const int b02 = bin0.z; counts[b02][2]++; geomBounds[b02][2].extend(prim0); 
+      const int b00 = bin0.x; triCounts[b00][0]++; geomBounds[b00][0].extend(prim0); 
+      const int b01 = bin0.y; triCounts[b01][1]++; geomBounds[b01][1].extend(prim0); 
+      const int b02 = bin0.z; triCounts[b02][2]++; geomBounds[b02][2].extend(prim0); 
     }
   }
 
@@ -161,9 +163,9 @@ namespace embree
       const BBox3fa prim0 = prims[i+0].bounds(); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
       
       /*! increase bounds for bins for even primitive */
-      const int b00 = bin0.x; counts[b00][0]++; geomBounds[b00][0].extend(prim0); 
-      const int b01 = bin0.y; counts[b01][1]++; geomBounds[b01][1].extend(prim0); 
-      const int b02 = bin0.z; counts[b02][2]++; geomBounds[b02][2].extend(prim0); 
+      const int b00 = bin0.x; bezierCounts[b00][0]++; geomBounds[b00][0].extend(prim0); 
+      const int b01 = bin0.y; bezierCounts[b01][1]++; geomBounds[b01][1].extend(prim0); 
+      const int b02 = bin0.z; bezierCounts[b02][2]++; geomBounds[b02][2].extend(prim0); 
     }
   }
   
@@ -171,14 +173,17 @@ namespace embree
   {
     Vec3fa rAreas [maxBins];      //!< area of bounds of primitives on the right
     Vec3fa rCounts[maxBins];      //!< blocks of primitives on the right
+    Vec3fa rBezierCounts[maxBins];      //!< blocks of primitives on the right
     
     /* sweep from right to left and compute parallel prefix of merged bounds */
     assert(mapping.size() > 0);
-    Vec3ia count = 0; BBox3fa bx = empty; BBox3fa by = empty; BBox3fa bz = empty;
+    Vec3ia triCount = 0, bezierCount = 0; 
+    BBox3fa bx = empty; BBox3fa by = empty; BBox3fa bz = empty;
     for (size_t i=mapping.size()-1; i>0; i--)
     {
-      count += counts[i];
-      rCounts[i] = Vec3fa(blocks(count));
+      triCount += triCounts[i];
+      bezierCount += bezierCounts[i];
+      rCounts[i] = Vec3fa(blocks(triCount) + bezierCount);
       bx = merge(bx,geomBounds[i][0]); rAreas[i][0] = halfArea(bx);
       by = merge(by,geomBounds[i][1]); rAreas[i][1] = halfArea(by);
       bz = merge(bz,geomBounds[i][2]); rAreas[i][2] = halfArea(bz);
@@ -186,14 +191,15 @@ namespace embree
     
     /* sweep from left to right and compute SAH */
     Vec3ia ii = 1; Vec3fa bestSAH = pos_inf; Vec3ia bestPos = 0;
-    count = 0; bx = empty; by = empty; bz = empty;
+    triCount = 0; bezierCount = 0; bx = empty; by = empty; bz = empty;
     for (size_t i=1; i<mapping.size(); i++, ii+=1)
     {
-      count += counts[i-1];
+      triCount += triCounts[i-1];
+      bezierCount += bezierCounts[i-1];
       bx = merge(bx,geomBounds[i-1][0]); float Ax = halfArea(bx);
       by = merge(by,geomBounds[i-1][1]); float Ay = halfArea(by);
       bz = merge(bz,geomBounds[i-1][2]); float Az = halfArea(bz);
-      const Vec3fa lCount = Vec3fa(blocks(count));
+      const Vec3fa lCount = Vec3fa(blocks(triCount) + bezierCount);
       const Vec3fa lArea = Vec3fa(Ax,Ay,Az);
       const Vec3fa sah = lArea*lCount + rAreas[i]*rCounts[i];
       bestPos = select(lt_mask(sah,bestSAH),ii ,bestPos);
@@ -325,11 +331,6 @@ namespace embree
 
   void BVH4Builder2::build(size_t threadIndex, size_t threadCount) 
   {
-    //size_t numPrimitives = source->size();
-    //bvh->init(numPrimitives);
-    //if (source->isEmpty()) 
-    //return;
-
     size_t numBeziers = 0;
     size_t numTriangles = 0;
     Scene* scene = (Scene*) geometry;
@@ -583,8 +584,8 @@ namespace embree
   typename BVH4Builder2::NodeRef BVH4Builder2::recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const ObjectSplitBinner::Split& split)
   {
     /*! compute leaf and split cost */
-    const float leafSAH  = primTy.intCost*split.pinfo.sah();
-    const float splitSAH = BVH4::travCost*halfArea(split.pinfo.geomBounds)+primTy.intCost*split.sah();
+    const float leafSAH  = primTy.intCost*split.leafSAH ();
+    const float splitSAH = primTy.intCost*split.splitSAH() + BVH4::travCost*halfArea(split.pinfo.geomBounds);
     assert(TriRefList::block_iterator_unsafe(prims).size() == split.pinfo.size());
     assert(split.pinfo.size() == 0 || leafSAH >= 0 && splitSAH >= 0);
     
@@ -594,7 +595,7 @@ namespace embree
     }
     
     /*! initialize child list */
-    TriRefList ctris[BVH4::N]; ctris[0] = tris;
+    TriRefList    ctris   [BVH4::N]; ctris   [0] = tris;
     BezierRefList cbeziers[BVH4::N]; cbeziers[0] = beziers;
     ObjectSplitBinner::Split csplit[BVH4::N]; csplit[0] = split;
     size_t numChildren = 1;
@@ -607,7 +608,7 @@ namespace embree
       ssize_t bestChild = -1;
       for (size_t i=0; i<numChildren; i++) 
       {
-        float dSAH = csplit[i].sah()-csplit[i].pinfo.sah();
+        float dSAH = csplit[i].splitSAH()-csplit[i].leafSAH();
         if (csplit[i].pinfo.size() <= minLeafSize) continue; 
         if (csplit[i].pinfo.size() > maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
         if (dSAH <= bestSAH) { bestChild = i; bestSAH = dSAH; }
@@ -615,7 +616,7 @@ namespace embree
       if (bestChild == -1) break;
       
       /*! perform best found split and find new splits */
-      TriRefList ltris,rtris; csplit[bestChild].split(threadIndex,&allocTriRefs,ctris[bestChild],ltris,rtris);
+      TriRefList    ltris,   rtris;    csplit[bestChild].split(threadIndex,&allocTriRefs,   ctris[bestChild],   ltris,   rtris);
       BezierRefList lbeziers,rbeziers; csplit[bestChild].split(threadIndex,&allocBezierRefs,cbeziers[bestChild],lbeziers,rbeziers);
       ObjectSplitBinner lheuristic(ltris,lbeziers); 
       ObjectSplitBinner rheuristic(rtris,rbeziers);
