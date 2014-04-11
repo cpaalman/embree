@@ -44,7 +44,8 @@ namespace embree
     /*! Split type of the split heuristic. */
     typedef typename Heuristic::Split Split;
     typedef typename Heuristic::PrimInfo PrimInfo;
-    
+    typedef Splitter<Heuristic> SplitterNormal;
+  
   public:
 
     /*! builder entry point */
@@ -54,9 +55,9 @@ namespace embree
     BVH4Builder2 (BVH4* bvh, BuildSource* source, void* geometry, const size_t minLeafSize = 1, const size_t maxLeafSize = inf);
 
     /*! creates a leaf node */
-    NodeRef createLeaf(size_t threadIndex, atomic_set<PrimRefBlock>& prims, const Split& split);
+    NodeRef createLeaf(size_t threadIndex, atomic_set<PrimRefBlock>& prims, const PrimInfo& split);
 
-    NodeRef recurse(size_t threadIndex, size_t depth, atomic_set<PrimRefBlock>& prims, const Split& split);
+    NodeRef recurse(size_t threadIndex, size_t depth, atomic_set<PrimRefBlock>& prims, const PrimInfo& pinfo, const Split& split);
 
   private:
     BuildSource* source;      //!< build source interface
