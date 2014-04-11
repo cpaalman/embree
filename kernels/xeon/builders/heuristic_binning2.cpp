@@ -105,6 +105,7 @@ namespace embree
     }
 
     split.mapping = mapping;
+    split.pinfo = pinfo;
     if (split.pos == 0) return;
     
     /* calculate geometry info from binning data */
@@ -146,9 +147,9 @@ namespace embree
 
   template<int logBlockSize>
   void HeuristicBinning2<logBlockSize>::Split::split(size_t thread, PrimRefAlloc* alloc, 
-                                                     atomic_set<PrimRefBlock>& prims, const PrimInfo& pinfo,
-                                                     atomic_set<PrimRefBlock>& lprims, PrimInfo& linfo, Split& lsplit,
-                                                     atomic_set<PrimRefBlock>& rprims, PrimInfo& rinfo, Split& rsplit)
+                                                     atomic_set<PrimRefBlock>& prims, 
+                                                     atomic_set<PrimRefBlock>& lprims, Split& lsplit,
+                                                     atomic_set<PrimRefBlock>& rprims, Split& rsplit)
   {
     HeuristicBinning2 lheuristic(this->linfo);
     HeuristicBinning2 rheuristic(this->rinfo);

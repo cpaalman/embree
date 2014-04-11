@@ -98,7 +98,7 @@ namespace embree
     if (primTy.needVertices) bvh->numVertices = numVertices;
     else                     bvh->numVertices = 0;
 
-    bvh->root = recurse(threadIndex,1,tris,pinfo,split);
+    bvh->root = recurse(threadIndex,1,tris,split);
 
     /* free all temporary blocks */
     Alloc::global.clear();
@@ -114,10 +114,10 @@ namespace embree
   }
   
   template<typename Heuristic>
-  typename BVH4Builder2<Heuristic>::NodeRef BVH4Builder2<Heuristic>::createLeaf(size_t threadIndex, atomic_set<PrimRefBlock>& prims, const PrimInfo& pinfo)
+  typename BVH4Builder2<Heuristic>::NodeRef BVH4Builder2<Heuristic>::createLeaf(size_t threadIndex, atomic_set<PrimRefBlock>& prims, const Split& split)
   {
     /* allocate leaf node */
-    size_t blocks = primTy.blocks(pinfo.size());
+    size_t blocks = primTy.blocks(split.pinfo.size());
     char* leaf = bvh->allocPrimitiveBlocks(threadIndex,0,blocks);
     assert(blocks <= (size_t)BVH4::maxLeafBlocks);
 
@@ -136,22 +136,21 @@ namespace embree
   }
 
   template<typename Heuristic>
-  typename BVH4Builder2<Heuristic>::NodeRef BVH4Builder2<Heuristic>::recurse(size_t threadIndex, size_t depth, atomic_set<PrimRefBlock>& prims, const PrimInfo& pinfo, const Split& split)
+  typename BVH4Builder2<Heuristic>::NodeRef BVH4Builder2<Heuristic>::recurse(size_t threadIndex, size_t depth, atomic_set<PrimRefBlock>& prims, const Split& split)
   {
     /*! compute leaf and split cost */
-    const float leafSAH  = primTy.intCost*pinfo.sah();
-    const float splitSAH = BVH4::travCost*halfArea(pinfo.geomBounds)+primTy.intCost*split.sah();
-    assert(atomic_set<PrimRefBlock>::block_iterator_unsafe(prims).size() == pinfo.size());
-    assert(pinfo.size() == 0 || leafSAH >= 0 && splitSAH >= 0);
+    const float leafSAH  = primTy.intCost*split.pinfo.sah();
+    const float splitSAH = BVH4::travCost*halfArea(split.pinfo.geomBounds)+primTy.intCost*split.sah();
+    assert(atomic_set<PrimRefBlock>::block_iterator_unsafe(prims).size() == split.pinfo.size());
+    assert(split.pinfo.size() == 0 || leafSAH >= 0 && splitSAH >= 0);
     
     /*! create a leaf node when threshold reached or SAH tells us to stop */
-    if (pinfo.size() <= minLeafSize || depth > BVH4::maxBuildDepth || (pinfo.size() <= maxLeafSize && leafSAH <= splitSAH)) {
-      return createLeaf(threadIndex,prims,pinfo);
+    if (split.pinfo.size() <= minLeafSize || depth > BVH4::maxBuildDepth || (split.pinfo.size() <= maxLeafSize && leafSAH <= splitSAH)) {
+      return createLeaf(threadIndex,prims,split);
     }
     
     /*! initialize child list */
     atomic_set<PrimRefBlock> cprims[BVH4::N]; cprims[0] = prims;
-    PrimInfo                 cinfo [BVH4::N]; cinfo [0] = pinfo;
     Split                    csplit[BVH4::N]; csplit[0] = split;
     size_t numChildren = 1;
     
@@ -163,32 +162,31 @@ namespace embree
       ssize_t bestChild = -1;
       for (size_t i=0; i<numChildren; i++) 
       {
-        float dSAH = csplit[i].sah()-cinfo[i].sah();
-        if (cinfo[i].size() <= minLeafSize) continue; 
-        if (cinfo[i].size() > maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
+        float dSAH = csplit[i].sah()-csplit[i].pinfo.sah();
+        if (csplit[i].pinfo.size() <= minLeafSize) continue; 
+        if (csplit[i].pinfo.size() > maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
         if (dSAH <= bestSAH) { bestChild = i; bestSAH = dSAH; }
       }
       if (bestChild == -1) break;
       
       /*! perform best found split and find new splits */
-      //SplitterNormal splitter(threadIndex,&alloc,source,cprims[bestChild],cinfo[bestChild],csplit[bestChild]);
       Split lsplit,rsplit;
       PrimInfo linfo,rinfo;
       atomic_set<PrimRefBlock> lprims,rprims;
       csplit[bestChild].split(threadIndex,&alloc,
-                              cprims[bestChild],cinfo[bestChild],
-                              lprims,linfo,lsplit,
-                              rprims,rinfo,rsplit);
+                              cprims[bestChild],
+                              lprims,lsplit,
+                              rprims,rsplit);
                               
-      cprims[bestChild  ] = lprims; cinfo[bestChild  ] = linfo; csplit[bestChild  ] = lsplit;
-      cprims[numChildren] = rprims; cinfo[numChildren] = rinfo; csplit[numChildren] = rsplit;
+      cprims[bestChild  ] = lprims; csplit[bestChild  ] = lsplit;
+      cprims[numChildren] = rprims; csplit[numChildren] = rsplit;
       numChildren++;
       
     } while (numChildren < BVH4::N);
     
     /*! create an inner node */
     BVH4::UANode* node = bvh->allocUANode(threadIndex);
-    for (size_t i=0; i<numChildren; i++) node->set(i,cinfo[i].geomBounds,recurse(threadIndex,depth+1,cprims[i],cinfo[i],csplit[i]));
+    for (size_t i=0; i<numChildren; i++) node->set(i,csplit[i].pinfo.geomBounds,recurse(threadIndex,depth+1,cprims[i],csplit[i]));
     return bvh->encodeNode(node);
   }
   

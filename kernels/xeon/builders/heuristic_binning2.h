@@ -146,9 +146,9 @@ namespace embree
       }
       
       void split(size_t threadIndex, PrimRefAlloc* alloc, 
-                                                     atomic_set<PrimRefBlock>& prims, const PrimInfo& pinfo,
-                                                     atomic_set<PrimRefBlock>& lprims, PrimInfo& linfo, Split& lsplit,
-                                                     atomic_set<PrimRefBlock>& rprims, PrimInfo& rinfo, Split& rsplit);
+                                                     atomic_set<PrimRefBlock>& prims, 
+                                                     atomic_set<PrimRefBlock>& lprims, Split& lsplit,
+                                                     atomic_set<PrimRefBlock>& rprims, Split& rsplit);
 
       /*! stream output */
       friend std::ostream& operator<<(std::ostream& cout, const Split& split) {
@@ -160,6 +160,7 @@ namespace embree
       }
       
     public:
+      PrimInfo pinfo;
       Mapping mapping;    //!< Mapping to bins
       int dim;            //!< Best object split dimension
       int pos;            //!< Best object split position
