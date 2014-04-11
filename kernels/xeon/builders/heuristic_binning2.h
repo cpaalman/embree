@@ -170,18 +170,8 @@ namespace embree
     __forceinline HeuristicBinning2 () {}
     
     /*! construction from geometry info */
-    __forceinline HeuristicBinning2 (const PrimInfo& pinfo)
-      : pinfo(pinfo), mapping(pinfo) { clear(); }
-    
-    /*! clear the binner */
-    __forceinline void clear() 
-    {
-      for (size_t i=0; i<mapping.size(); i++) {
-        counts[i] = 0;
-        geomBounds[i][0] = geomBounds[i][1] = geomBounds[i][2] = empty;
-        centBounds[i][0] = centBounds[i][1] = centBounds[i][2] = empty;
-      }
-    }
+    //__forceinline HeuristicBinning2 (const PrimInfo& pinfo)
+    //  : pinfo(pinfo), mapping(pinfo) { clear(); }
     
     void add(atomic_set<PrimRefBlock>& prims);
 
@@ -189,9 +179,6 @@ namespace embree
 
     /*! bin an array of primitives */
     void bin(const PrimRef* prim, size_t num);
-    
-    /*! merge multiple binning infos into one */
-    static void reduce(const HeuristicBinning2 binners[], size_t num, HeuristicBinning2& binner_o);
     
     /*! calculate the best possible split */
     void best(Split& split_o);
@@ -212,6 +199,5 @@ namespace embree
     /* initialize binning counter and bounds */
     Vec3ia   counts    [maxBins];    //< number of primitives mapped to bin
     BBox3fa geomBounds[maxBins][4]; //< bounds for every bin in every dimension
-    BBox3fa centBounds[maxBins][4]; //< centroid bounds for every bin in every dimension
   };
 }

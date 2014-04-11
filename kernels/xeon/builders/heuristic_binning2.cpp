@@ -68,14 +68,14 @@ namespace embree
       const BBox3fa prim1 = prims[i+1].bounds(); const Vec3ia bin1 = mapping.bin(prim1); const Vec3fa center1 = Vec3fa(center2(prim1));
       
       /*! increase bounds for bins for even primitive */
-      const int b00 = bin0.x; counts[b00][0]++; geomBounds[b00][0].extend(prim0); centBounds[b00][0].extend(center0);
-      const int b01 = bin0.y; counts[b01][1]++; geomBounds[b01][1].extend(prim0); centBounds[b01][1].extend(center0);
-      const int b02 = bin0.z; counts[b02][2]++; geomBounds[b02][2].extend(prim0); centBounds[b02][2].extend(center0);
+      const int b00 = bin0.x; counts[b00][0]++; geomBounds[b00][0].extend(prim0); 
+      const int b01 = bin0.y; counts[b01][1]++; geomBounds[b01][1].extend(prim0); 
+      const int b02 = bin0.z; counts[b02][2]++; geomBounds[b02][2].extend(prim0); 
       
       /*! increase bounds of bins for odd primitive */
-      const int b10 = bin1.x; counts[b10][0]++; geomBounds[b10][0].extend(prim1); centBounds[b10][0].extend(center1);
-      const int b11 = bin1.y; counts[b11][1]++; geomBounds[b11][1].extend(prim1); centBounds[b11][1].extend(center1);
-      const int b12 = bin1.z; counts[b12][2]++; geomBounds[b12][2].extend(prim1); centBounds[b12][2].extend(center1);
+      const int b10 = bin1.x; counts[b10][0]++; geomBounds[b10][0].extend(prim1); 
+      const int b11 = bin1.y; counts[b11][1]++; geomBounds[b11][1].extend(prim1); 
+      const int b12 = bin1.z; counts[b12][2]++; geomBounds[b12][2].extend(prim1); 
     }
     
     /*! for uneven number of primitives */
@@ -85,9 +85,9 @@ namespace embree
       const BBox3fa prim0 = prims[i].bounds(); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
       
       /*! increase bounds of bins */
-      const int b00 = bin0.x; counts[b00][0]++; geomBounds[b00][0].extend(prim0); centBounds[b00][0].extend(center0);
-      const int b01 = bin0.y; counts[b01][1]++; geomBounds[b01][1].extend(prim0); centBounds[b01][1].extend(center0);
-      const int b02 = bin0.z; counts[b02][2]++; geomBounds[b02][2].extend(prim0); centBounds[b02][2].extend(center0);
+      const int b00 = bin0.x; counts[b00][0]++; geomBounds[b00][0].extend(prim0); 
+      const int b01 = bin0.y; counts[b01][1]++; geomBounds[b01][1].extend(prim0); 
+      const int b02 = bin0.z; counts[b02][2]++; geomBounds[b02][2].extend(prim0); 
     }
   }
   
@@ -143,30 +143,11 @@ namespace embree
   }
   
   template<int logBlockSize>
-  void HeuristicBinning2<logBlockSize>::reduce(const HeuristicBinning2 binners[], size_t num, HeuristicBinning2& binner_o)
-  {
-    binner_o = binners[0];
-    for (size_t tid=1; tid<num; tid++) {
-      const HeuristicBinning2& binner = binners[tid];
-      for (size_t bin=0; bin<binner.mapping.size(); bin++) 
-      {
-        for (size_t dim=0; dim<3; dim++) {
-          binner_o.counts    [bin][dim] += binner.counts[bin][dim];
-          binner_o.geomBounds[bin][dim].extend(binner.geomBounds[bin][dim]);
-          binner_o.centBounds[bin][dim].extend(binner.centBounds[bin][dim]);
-        }
-      }
-    }
-  }
-
-  template<int logBlockSize>
   void HeuristicBinning2<logBlockSize>::Split::split(size_t thread, PrimRefAlloc* alloc, 
                                                      atomic_set<PrimRefBlock>& prims, 
                                                      atomic_set<PrimRefBlock>& lprims, 
                                                      atomic_set<PrimRefBlock>& rprims)
   {
-    //HeuristicBinning2 lheuristic(this->linfo);
-    //HeuristicBinning2 rheuristic(this->rinfo);
     atomic_set<PrimRefBlock>::item* lblock = lprims.insert(alloc->malloc(thread));
     atomic_set<PrimRefBlock>::item* rblock = rprims.insert(alloc->malloc(thread));
     
@@ -179,22 +160,18 @@ namespace embree
         if (left(prim)) 
         {
           if (likely(lblock->insert(prim))) continue; 
-          //lheuristic.bin(lblock->base(),lblock->size());
           lblock = lprims.insert(alloc->malloc(thread));
           lblock->insert(prim);
         } 
         else 
         {
           if (likely(rblock->insert(prim))) continue;
-          //rheuristic.bin(rblock->base(),rblock->size());
           rblock = rprims.insert(alloc->malloc(thread));
           rblock->insert(prim);
         }
       }
       alloc->free(thread,block);
     }
-    //lheuristic.bin(lblock->base(),lblock->size()); lheuristic.best(lsplit); 
-    //rheuristic.bin(rblock->base(),rblock->size()); rheuristic.best(rsplit);
   }
 
   /*! explicit template instantiations */

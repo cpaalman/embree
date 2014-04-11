@@ -83,13 +83,18 @@ namespace embree
     }
     
     /* perform binning */
-    PrimInfo pinfo(numTriangles,geomBounds,centBounds);
+    Heuristic heuristic;
+    heuristic.add(tris);
+    Split split;
+    heuristic.best(split);
+
+    /*PrimInfo pinfo(numTriangles,geomBounds,centBounds);
     Heuristic heuristic(pinfo);
     atomic_set<PrimRefBlock>::iterator i=tris;
     while (PrimRefBlock* block = i.next())
       heuristic.bin(block->base(),block->size());
     
-    Split split; heuristic.best(split);
+      Split split; heuristic.best(split);*/
 
     /* perform binning */
     bvh->numPrimitives = numTriangles;
