@@ -83,18 +83,39 @@ namespace embree
     }
     
     /* perform binning */
-    Heuristic heuristic;
-    heuristic.add(tris);
-    Split split;
-    heuristic.best(split);
+    //Split split;
+    Heuristic heuristic(tris); 
+    //heuristic.add(tris);
+    //heuristic.bin(tris);
+    //heuristic.best(split);
+    Split split = heuristic.split;
 
-    /*PrimInfo pinfo(numTriangles,geomBounds,centBounds);
-    Heuristic heuristic(pinfo);
-    atomic_set<PrimRefBlock>::iterator i=tris;
-    while (PrimRefBlock* block = i.next())
-      heuristic.bin(block->base(),block->size());
+#if 0
+    float bestSAH = inf;
+    ObjectBinning object_binning_aligned(tris,beziers);
+    bestSAH = min(bestSAH,object_binning_aligned.sah());
+
+    SpatialBinning spatial_binning_aligned(tris,beziers);
+    bestSAH = min(bestSAH,spatial_binning_aligned.sah());
     
-      Split split; heuristic.best(split);*/
+    Space hairspace = computeSpace(tris,beziers);
+    ObjectBinning object_binning_unaligned(tris,beziers,hairspace);
+    bestSAH = min(bestSAH,object_binning_unaligned.sah());
+    
+    SpatialBinning spatial_binning_unaligned(tris,beziers,hairspace);
+    bestSAH = min(bestSAH,spatial_binning_unaligned.sah());
+
+    Split split;
+    if (bestSAH == object_binning_aligned.sah()) 
+      new (&split) Split(object_binning_aligned.split);
+    else if (bestSAH == spatial_binning_aligned.sah()) 
+      new (&split) Split(spatial_binning_aligned.split);
+    else if (bestSAH == object_binning_unaligned.sah()) 
+      new (&split) Split(object_binning_unaligned.split);
+    else if (bestSAH == spatial_binning_unaligned.sah()) 
+      new (&split) Split(spatial_binning_unaligned.split);
+    
+#endif
 
     /* perform binning */
     bvh->numPrimitives = numTriangles;
@@ -177,20 +198,20 @@ namespace embree
       //Split lsplit,rsplit;
       PrimInfo linfo,rinfo;
       atomic_set<PrimRefBlock> lprims,rprims;
-      csplit[bestChild].split(threadIndex,&alloc,
-                              cprims[bestChild],
-                              lprims,
-                              rprims);
+      csplit[bestChild].split(threadIndex,&alloc,cprims[bestChild],lprims,rprims);
 
-      Heuristic lheuristic;
-      lheuristic.add(lprims);
-      Split lsplit1;
-      lheuristic.best(lsplit1);
+      Heuristic lheuristic(lprims); 
+      Split lsplit1 = lheuristic.split;
+      /*lheuristic.add(lprims);
+      lheuristic.bin(lprims);
+      lheuristic.best(lsplit1);*/
 
-      Heuristic rheuristic;
-      rheuristic.add(rprims);
-      Split rsplit1;
-      rheuristic.best(rsplit1);
+      
+      Heuristic rheuristic(rprims);
+      Split rsplit1 = rheuristic.split;
+      /*rheuristic.add(rprims);
+      rheuristic.bin(rprims);
+      rheuristic.best(rsplit1);*/
                               
       cprims[bestChild  ] = lprims; csplit[bestChild  ] = lsplit1;
       cprims[numChildren] = rprims; csplit[numChildren] = rsplit1;

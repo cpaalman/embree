@@ -22,13 +22,25 @@ namespace embree
   const size_t HeuristicBinning2<logBlockSize>::maxBins;
 
   template<int logBlockSize>
+  HeuristicBinning2<logBlockSize>::HeuristicBinning2(atomic_set<PrimRefBlock>& prims) 
+  {
+    add(prims);
+    bin(prims);
+    best(split);
+  }
+
+  template<int logBlockSize>
   void HeuristicBinning2<logBlockSize>::add(atomic_set<PrimRefBlock>& prims)
   {
     atomic_set<PrimRefBlock>::iterator i=prims;
     while (PrimRefBlock* block = i.next()) {
       info(block->base(),block->size());
     }
+  }
 
+  template<int logBlockSize>
+  void HeuristicBinning2<logBlockSize>::bin(atomic_set<PrimRefBlock>& prims)
+  {
     new (&mapping) Mapping(pinfo);
     for (size_t i=0; i<mapping.size(); i++) {
       counts[i] = 0;

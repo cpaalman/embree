@@ -167,24 +167,22 @@ namespace embree
     };
     
     /*! default constructor */
-    __forceinline HeuristicBinning2 () {}
-    
-    /*! construction from geometry info */
-    //__forceinline HeuristicBinning2 (const PrimInfo& pinfo)
-    //  : pinfo(pinfo), mapping(pinfo) { clear(); }
-    
+    HeuristicBinning2 (atomic_set<PrimRefBlock>& prims);
+  
+  private:
+
     void add(atomic_set<PrimRefBlock>& prims);
+    
+    void bin(atomic_set<PrimRefBlock>& prims);
+
+    /*! calculate the best possible split */
+    void best(Split& split_o);
 
     void info(const PrimRef* prims, size_t num);
 
     /*! bin an array of primitives */
     void bin(const PrimRef* prim, size_t num);
     
-    /*! calculate the best possible split */
-    void best(Split& split_o);
-
-  
-  private:
     
     /*! Compute the number of blocks occupied for each dimension. */
     __forceinline static Vec3ia blocks(const Vec3ia& a) { return (a+Vec3ia((1 << logBlockSize)-1)) >> logBlockSize; }
@@ -199,5 +197,7 @@ namespace embree
     /* initialize binning counter and bounds */
     Vec3ia   counts    [maxBins];    //< number of primitives mapped to bin
     BBox3fa geomBounds[maxBins][4]; //< bounds for every bin in every dimension
+
+    Split split;
   };
 }
