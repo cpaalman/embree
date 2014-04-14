@@ -368,13 +368,68 @@ namespace embree
     }
   }
 
+  BVH4Builder2::ObjectTypePartitioning::ObjectTypePartitioning (TriRefList& tris, BezierRefList& beziers)
+  {
+    split.pinfo.num = 0;
+    split.pinfo.numTriangles = 0;
+    split.pinfo.numBeziers = 0;
+    split.pinfo.geomBounds = empty;
+    split.pinfo.centBounds = empty;
+    
+    BBox3fa triGeomBounds = empty;
+    BBox3fa triCentBounds = empty;
+    TriRefList::iterator t=tris;
+    while (TriRefBlock* block = t.next()) 
+    {
+      split.pinfo.num += block->size();
+      split.pinfo.numTriangles += block->size();
+      for (size_t i=0; i<block->size(); i++)
+      {
+        const BBox3fa bounds = block->at(i).bounds(); 
+        triGeomBounds.extend(bounds);
+        triCentBounds.extend(center2(bounds));
+      }
+    }
+    split.pinfo.geomBounds.extend(triGeomBounds);
+    split.pinfo.centBounds.extend(triCentBounds);
+
+    BBox3fa bezierGeomBounds = empty;
+    BBox3fa bezierCentBounds = empty;
+    BezierRefList::iterator b=beziers;
+    while (BezierRefBlock* block = b.next()) 
+    {
+      split.pinfo.num += block->size();
+      split.pinfo.numBeziers += block->size();
+      for (size_t i=0; i<block->size(); i++)
+      {
+        const BBox3fa bounds = block->at(i).bounds(); 
+        bezierGeomBounds.extend(bounds);
+        bezierCentBounds.extend(center2(bounds));
+      }
+    }
+    split.pinfo.geomBounds.extend(bezierGeomBounds);
+    split.pinfo.centBounds.extend(bezierCentBounds);
+
+    split.cost = blocks(split.pinfo.numTriangles)*safeHalfArea(triGeomBounds) + split.pinfo.numBeziers*safeHalfArea(bezierGeomBounds);
+  }
+    
+  void BVH4Builder2::ObjectTypePartitioning::Split::split(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims)
+  {
+    lprims = prims;
+  }
+
+  void BVH4Builder2::ObjectTypePartitioning::Split::split(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims)
+  {
+    rprims = prims;
+  }
+
   BVH4Builder2::BVH4Builder2 (BVH4* bvh, BuildSource* source, void* geometry, const size_t minLeafSize, const size_t maxLeafSize)
     : source(source), geometry(geometry), /*primTy(*bvh->primTy[0]),*/ minLeafSize(minLeafSize), maxLeafSize(maxLeafSize), bvh(bvh)
   {
     size_t maxLeafTris    = BVH4::maxLeafBlocks*bvh->primTy[0]->blockSize;
     size_t maxLeafBeziers = BVH4::maxLeafBlocks*bvh->primTy[1]->blockSize;
     if (maxLeafTris < this->maxLeafSize) this->maxLeafSize = maxLeafTris;
-    if (maxLeafBeziers < this->maxLeafSize) this->maxLeafSize = maxLeafBeziers; // FIXME: keep separate for tris and beziers
+    //if (maxLeafBeziers < this->maxLeafSize) this->maxLeafSize = maxLeafBeziers; // FIXME: keep separate for tris and beziers
   }
 
   const BBox3fa BVH4Builder2::computeAlignedBounds(TriRefList& tris)
@@ -586,8 +641,14 @@ namespace embree
 #else
 
     float bestSAH = inf;
+
+    ObjectTypePartitioning object_type(tris,beziers);
+    bestSAH = min(bestSAH,object_type.split.splitSAH());
+    PRINT(object_type.split.splitSAH());
+
     ObjectSplitBinner object_binning_aligned(one,tris,beziers);
     bestSAH = min(bestSAH,object_binning_aligned.split.splitSAH());
+    PRINT(object_binning_aligned.split.splitSAH());
 
     //SpatialBinning spatial_binning_aligned(tris,beziers);
     //bestSAH = min(bestSAH,spatial_binning_aligned.split.splitSAH());
@@ -599,7 +660,9 @@ namespace embree
     //SpatialBinning spatial_binning_unaligned(tris,beziers,hairspace);
     //bestSAH = min(bestSAH,spatial_binning_unaligned.split.splitSAH());
 
-    if (bestSAH == object_binning_aligned.split.splitSAH())
+    if (bestSAH == object_type.split.splitSAH())
+      new (&split) GeneralSplit(object_type.split);
+    else if (bestSAH == object_binning_aligned.split.splitSAH())
       new (&split) GeneralSplit(object_binning_aligned.split,true);
     //else if (bestSAH == spatial_binning_aligned.split.splitSAH()) 
     //new (&split) GeneralSplit(spatial_binning_aligned.split,true);
@@ -618,8 +681,8 @@ namespace embree
     size_t N = bvh->primTy[0]->blocks(TriRefList::block_iterator_unsafe(prims).size());
 
     if (N > (size_t)BVH4::maxLeafBlocks) {
-      std::cout << "WARNING: Loosing " << N-BVH4::maxLeafBlocks << " primitives during build!" << std::endl;
-      //std::cout << "!" << std::flush;
+      //std::cout << "WARNING: Loosing " << N-BVH4::maxLeafBlocks << " primitives during build!" << std::endl;
+      std::cout << "!" << std::flush;
       N = (size_t)BVH4::maxLeafBlocks;
     }
     Scene* scene = (Scene*) geometry;
@@ -669,8 +732,8 @@ namespace embree
     size_t N = BezierRefList::block_iterator_unsafe(prims).size();
 
     if (N > (size_t)BVH4::maxLeafBlocks) {
-      std::cout << "WARNING: Loosing " << N-BVH4::maxLeafBlocks << " primitives during build!" << std::endl;
-      //std::cout << "!" << std::flush;
+      //std::cout << "WARNING: Loosing " << N-BVH4::maxLeafBlocks << " primitives during build!" << std::endl;
+      std::cout << "!" << std::flush;
       N = (size_t)BVH4::maxLeafBlocks;
     }
     Scene* scene = (Scene*) geometry;
@@ -735,8 +798,8 @@ namespace embree
     //PRINT(splitSAH);
     //PRINT(split.pinfo.size());
     //PRINT(maxLeafSize);
-    assert(TriRefList::block_iterator_unsafe(prims).size() == split.size());
-    assert(split.size() == 0 || leafSAH >= 0 && splitSAH >= 0);
+    //assert(TriRefList::block_iterator_unsafe(prims).size() == split.size());
+    //assert(split.size() == 0 || leafSAH >= 0 && splitSAH >= 0);
     
     /*! create a leaf node when threshold reached or SAH tells us to stop */
     if (split.size() <= minLeafSize || depth > BVH4::maxBuildDepth || (split.size() <= maxLeafSize && leafSAH <= splitSAH)) {

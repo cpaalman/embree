@@ -291,6 +291,54 @@ namespace embree
 
     Split split;
   };
+
+  class ObjectTypePartitioning
+  {
+  public:
+    ObjectTypePartitioning (TriRefList& prims, BezierRefList& beziers);
+
+    /*! Compute the number of blocks occupied in one dimension. */
+    __forceinline static int  blocks(size_t a) { return (int)((a+((1LL << logBlockSize)-1)) >> logBlockSize); }
+    
+    /*! stores bounding information for a set of primitives */
+    class PrimInfo
+    {
+    public:
+      __forceinline PrimInfo () 
+        : num(0), numTriangles(0), numBeziers(0), geomBounds(empty), centBounds(empty) {}
+
+      /*! returns the number of primitives */
+      __forceinline size_t size() const { 
+        return num; 
+      }
+
+    public:
+      size_t num;          //!< number of primitives
+      size_t numTriangles, numBeziers;
+      BBox3fa geomBounds;   //!< geometry bounds of primitives
+      BBox3fa centBounds;   //!< centroid bounds of primitives
+    };
+
+  public:
+    class Split 
+    { 
+    public:
+      __forceinline float leafSAH() const { return halfArea(pinfo.geomBounds)*(blocks(pinfo.numTriangles) + pinfo.numBeziers); }
+
+      /*! return SAH cost of performing the split */
+      __forceinline float splitSAH() const { return cost; } 
+
+      void split(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims);
+      void split(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims);
+
+    public:
+      PrimInfo pinfo;
+      float cost;
+    };
+
+  public:
+    Split split;
+  };
     
     class __aligned(16) GeneralSplit
     {
@@ -312,12 +360,21 @@ namespace embree
         new (data) ObjectSplitBinner::Split(split);
       }
 
+      __forceinline GeneralSplit(const ObjectTypePartitioning::Split& split) {
+        type = TYPE_SPLIT; aligned = true;
+        leaf_sah = split.leafSAH();
+        split_sah = split.splitSAH();
+        halfAreaGeomBounds = halfArea(split.pinfo.geomBounds);
+        num = split.pinfo.size();
+        new (data) ObjectTypePartitioning::Split(split);
+      }
+
       __forceinline void split(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims) 
       {
         switch (type) {
         case OBJECT_SPLIT : ((ObjectSplitBinner::Split* )data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
           //case SPATIAL_SPLIT: ((SpatialSplitBinner::Split*)data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
-          //case TYPE_SPLIT   : ((TypeSplitBinner::Split*   )data)->split(threadIndex,alloc,prims,lprims,rprims); break;         
+        case TYPE_SPLIT   : ((ObjectTypePartitioning::Split*   )data)->split(threadIndex,alloc,prims,lprims,rprims); break;         
         default           : split_fallback(threadIndex,alloc,prims,lprims,rprims); break;
         }
       }
@@ -327,7 +384,7 @@ namespace embree
         switch (type) {
         case OBJECT_SPLIT : ((ObjectSplitBinner::Split* )data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
           //case SPATIAL_SPLIT: ((SpatialSplitBinner::Split*)data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
-          //case TYPE_SPLIT   : ((TypeSplitBinner::Split*   )data)->split(threadIndex,alloc,prims,lprims,rprims); break;         
+        case TYPE_SPLIT   : ((ObjectTypePartitioning::Split*   )data)->split(threadIndex,alloc,prims,lprims,rprims); break;         
         default           : split_fallback(threadIndex,alloc,prims,lprims,rprims); break;
         }
       }
