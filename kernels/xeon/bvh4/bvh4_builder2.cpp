@@ -22,8 +22,6 @@
 #include "geometry/bezier1.h"
 #include "geometry/triangle4.h"
 
-//#include "builders/heuristic_binning.h"
-//#include "builders/heuristic_binning2.h"
 #include "builders/splitter_fallback.h"
 
 #include "common/scene_triangle_mesh.h"
@@ -193,7 +191,6 @@ namespace embree
   {
     Vec3fa rAreas [maxBins];      //!< area of bounds of primitives on the right
     Vec3fa rCounts[maxBins];      //!< blocks of primitives on the right
-    Vec3fa rBezierCounts[maxBins];      //!< blocks of primitives on the right
     
     /* sweep from right to left and compute parallel prefix of merged bounds */
     assert(mapping.size() > 0);
@@ -240,66 +237,8 @@ namespace embree
     }
 
     split.mapping = mapping;
-    split.pinfo = pinfo;
+    //split.pinfo = pinfo;
     split.space = space;
-  }
-
-  void BVH4Builder2::split_fallback(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims)
-  {  
-    size_t num = 0;
-    atomic_set<TriRefBlock>::item* lblock = lprims.insert(alloc->malloc(threadIndex));
-    atomic_set<TriRefBlock>::item* rblock = rprims.insert(alloc->malloc(threadIndex));
-    
-    while (atomic_set<TriRefBlock>::item* block = prims.take()) 
-    {
-      for (size_t i=0; i<block->size(); i++) 
-      {
-        const PrimRef& prim = block->at(i); 
-        
-        if (num&1) 
-        {
-          num++;
-          if (likely(lblock->insert(prim))) continue; 
-          lblock = lprims.insert(alloc->malloc(threadIndex));
-          lblock->insert(prim);
-        } else {
-          num++;
-          if (likely(rblock->insert(prim))) continue;
-          rblock = rprims.insert(alloc->malloc(threadIndex));
-          rblock->insert(prim);
-        }
-      }
-      alloc->free(threadIndex,block);
-    }
-  }
-
-  void BVH4Builder2::split_fallback(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims)
-  {  
-    size_t num = 0;
-    atomic_set<BezierRefBlock>::item* lblock = lprims.insert(alloc->malloc(threadIndex));
-    atomic_set<BezierRefBlock>::item* rblock = rprims.insert(alloc->malloc(threadIndex));
-    
-    while (atomic_set<BezierRefBlock>::item* block = prims.take()) 
-    {
-      for (size_t i=0; i<block->size(); i++) 
-      {
-        const Bezier1& prim = block->at(i); 
-        
-        if (num&1) 
-        {
-          num++;
-          if (likely(lblock->insert(prim))) continue; 
-          lblock = lprims.insert(alloc->malloc(threadIndex));
-          lblock->insert(prim);
-        } else {
-          num++;
-          if (likely(rblock->insert(prim))) continue;
-          rblock = rprims.insert(alloc->malloc(threadIndex));
-          rblock->insert(prim);
-        }
-      }
-      alloc->free(threadIndex,block);
-    }
   }
 
   void BVH4Builder2::ObjectSplitBinner::Split::split(size_t thread, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims)
@@ -370,19 +309,20 @@ namespace embree
 
   BVH4Builder2::ObjectTypePartitioning::ObjectTypePartitioning (TriRefList& tris, BezierRefList& beziers)
   {
-    split.pinfo.num = 0;
-    split.pinfo.numTriangles = 0;
-    split.pinfo.numBeziers = 0;
-    split.pinfo.geomBounds = empty;
-    split.pinfo.centBounds = empty;
+    PrimInfo pinfo;
+    pinfo.num = 0;
+    pinfo.numTriangles = 0;
+    pinfo.numBeziers = 0;
+    pinfo.geomBounds = empty;
+    pinfo.centBounds = empty;
     
     BBox3fa triGeomBounds = empty;
     BBox3fa triCentBounds = empty;
     TriRefList::iterator t=tris;
     while (TriRefBlock* block = t.next()) 
     {
-      split.pinfo.num += block->size();
-      split.pinfo.numTriangles += block->size();
+      pinfo.num += block->size();
+      pinfo.numTriangles += block->size();
       for (size_t i=0; i<block->size(); i++)
       {
         const BBox3fa bounds = block->at(i).bounds(); 
@@ -390,16 +330,16 @@ namespace embree
         triCentBounds.extend(center2(bounds));
       }
     }
-    split.pinfo.geomBounds.extend(triGeomBounds);
-    split.pinfo.centBounds.extend(triCentBounds);
+    pinfo.geomBounds.extend(triGeomBounds);
+    pinfo.centBounds.extend(triCentBounds);
 
     BBox3fa bezierGeomBounds = empty;
     BBox3fa bezierCentBounds = empty;
     BezierRefList::iterator b=beziers;
     while (BezierRefBlock* block = b.next()) 
     {
-      split.pinfo.num += block->size();
-      split.pinfo.numBeziers += block->size();
+      pinfo.num += block->size();
+      pinfo.numBeziers += block->size();
       for (size_t i=0; i<block->size(); i++)
       {
         const BBox3fa bounds = block->at(i).bounds(); 
@@ -407,11 +347,11 @@ namespace embree
         bezierCentBounds.extend(center2(bounds));
       }
     }
-    split.pinfo.geomBounds.extend(bezierGeomBounds);
-    split.pinfo.centBounds.extend(bezierCentBounds);
+    pinfo.geomBounds.extend(bezierGeomBounds);
+    pinfo.centBounds.extend(bezierCentBounds);
 
-    if (split.pinfo.numTriangles != 0 && split.pinfo.numBeziers != 0)
-      split.cost = blocks(split.pinfo.numTriangles)*safeHalfArea(triGeomBounds) + split.pinfo.numBeziers*safeHalfArea(bezierGeomBounds);
+    if (pinfo.numTriangles != 0 && pinfo.numBeziers != 0)
+      split.cost = blocks(pinfo.numTriangles)*safeHalfArea(triGeomBounds) + pinfo.numBeziers*safeHalfArea(bezierGeomBounds);
     else 
       split.cost = inf;
   }
@@ -433,6 +373,99 @@ namespace embree
     size_t maxLeafBeziers = BVH4::maxLeafBlocks*bvh->primTy[1]->blockSize;
     if (maxLeafTris < this->maxLeafSize) this->maxLeafSize = maxLeafTris;
     //if (maxLeafBeziers < this->maxLeafSize) this->maxLeafSize = maxLeafBeziers; // FIXME: keep separate for tris and beziers
+  }
+
+  void BVH4Builder2::split_fallback(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims)
+  {  
+    size_t num = 0;
+    atomic_set<TriRefBlock>::item* lblock = lprims.insert(alloc->malloc(threadIndex));
+    atomic_set<TriRefBlock>::item* rblock = rprims.insert(alloc->malloc(threadIndex));
+    
+    while (atomic_set<TriRefBlock>::item* block = prims.take()) 
+    {
+      for (size_t i=0; i<block->size(); i++) 
+      {
+        const PrimRef& prim = block->at(i); 
+        
+        if (num&1) 
+        {
+          num++;
+          if (likely(lblock->insert(prim))) continue; 
+          lblock = lprims.insert(alloc->malloc(threadIndex));
+          lblock->insert(prim);
+        } else {
+          num++;
+          if (likely(rblock->insert(prim))) continue;
+          rblock = rprims.insert(alloc->malloc(threadIndex));
+          rblock->insert(prim);
+        }
+      }
+      alloc->free(threadIndex,block);
+    }
+  }
+
+  void BVH4Builder2::split_fallback(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims)
+  {  
+    size_t num = 0;
+    atomic_set<BezierRefBlock>::item* lblock = lprims.insert(alloc->malloc(threadIndex));
+    atomic_set<BezierRefBlock>::item* rblock = rprims.insert(alloc->malloc(threadIndex));
+    
+    while (atomic_set<BezierRefBlock>::item* block = prims.take()) 
+    {
+      for (size_t i=0; i<block->size(); i++) 
+      {
+        const Bezier1& prim = block->at(i); 
+        
+        if (num&1) 
+        {
+          num++;
+          if (likely(lblock->insert(prim))) continue; 
+          lblock = lprims.insert(alloc->malloc(threadIndex));
+          lblock->insert(prim);
+        } else {
+          num++;
+          if (likely(rblock->insert(prim))) continue;
+          rblock = rprims.insert(alloc->malloc(threadIndex));
+          rblock->insert(prim);
+        }
+      }
+      alloc->free(threadIndex,block);
+    }
+  }
+
+  const BVH4Builder2::PrimInfo BVH4Builder2::computePrimInfo(TriRefList& tris, BezierRefList& beziers)
+  {
+    PrimInfo pinfo;
+    BBox3fa geomBounds = empty;
+    BBox3fa centBounds = empty;
+    TriRefList::iterator t=tris;
+    while (TriRefBlock* block = t.next()) 
+    {
+      pinfo.num += block->size();
+      pinfo.numTriangles += block->size();
+      for (size_t i=0; i<block->size(); i++)
+      {
+        const BBox3fa bounds = block->at(i).bounds(); 
+        geomBounds.extend(bounds);
+        centBounds.extend(center2(bounds));
+      }
+    }
+
+    BezierRefList::iterator b=beziers;
+    while (BezierRefBlock* block = b.next()) 
+    {
+      pinfo.num += block->size();
+      pinfo.numBeziers += block->size();
+      for (size_t i=0; i<block->size(); i++)
+      {
+        const BBox3fa bounds = block->at(i).bounds(); 
+        geomBounds.extend(bounds);
+        centBounds.extend(center2(bounds));
+      }
+    }
+    pinfo.geomBounds = geomBounds;
+    pinfo.centBounds = centBounds;
+    return pinfo;
   }
 
   const BBox3fa BVH4Builder2::computeAlignedBounds(TriRefList& tris)
@@ -561,8 +594,11 @@ namespace embree
     size_t numVertices = 0;
     TriRefList tris;
     BezierRefList beziers;
+
+    //size_t numTris = 0;
+    //size_t numBeziers = 0;
     BBox3fa geomBounds = empty;
-    //BBox3fa centBounds = empty;
+    BBox3fa centBounds = empty;
 
     for (size_t i=0; i<scene->size(); i++) 
     {
@@ -578,7 +614,7 @@ namespace embree
         for (size_t j=0; j<set->numTriangles; j++) {
           const BBox3fa bounds = set->bounds(j);
           geomBounds.extend(bounds);
-          //centBounds.extend(center2(bounds));
+          centBounds.extend(center2(bounds));
           const PrimRef prim = PrimRef(bounds,i,j);
            TriRefList::item* block = tris.head();
           if (block == NULL || !block->insert(prim)) {
@@ -601,7 +637,9 @@ namespace embree
           const Vec3fa& p3 = set->vertex(ofs+3);
           const Bezier1 bezier(p0,p1,p2,p3,0,1,i,j);
           //bounds.extend(subdivideAndAdd(threadIndex,prims,bezier,enablePreSubdivision));
-          geomBounds.extend(bezier.bounds());
+          const BBox3fa bounds = bezier.bounds();
+          geomBounds.extend(bounds);
+          centBounds.extend(center2(bounds));
           BezierRefList::item* block = beziers.head();
           if (block == NULL || !block->insert(bezier)) {
             block = beziers.insert(allocBezierRefs.malloc(threadIndex));
@@ -610,6 +648,7 @@ namespace embree
         }
       }
     }
+    PrimInfo pinfo = computePrimInfo(tris,beziers);
     GeneralSplit split; heuristic(tris,beziers,split);
 
     /* perform binning */
@@ -618,7 +657,7 @@ namespace embree
     //if (primTy.needVertices) bvh->numVertices = numVertices; // FIXME
     //else                     bvh->numVertices = 0;
 
-    bvh->root = recurse(threadIndex,1,tris,beziers,split);
+    bvh->root = recurse(threadIndex,1,tris,beziers,pinfo,split);
 
     /* free all temporary blocks */
     Alloc::global.clear();
@@ -686,7 +725,7 @@ namespace embree
 #endif
   }
 
-  BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, TriRefList& prims, const GeneralSplit& split)
+  BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, TriRefList& prims, const PrimInfo& pinfo)
   {
     size_t N = bvh->primTy[0]->blocks(TriRefList::block_iterator_unsafe(prims).size());
 
@@ -737,7 +776,7 @@ namespace embree
       throw std::runtime_error("unknown primitive type");
   }
 
-  BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, BezierRefList& prims, const GeneralSplit& split)
+  BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, BezierRefList& prims, const PrimInfo& pinfo)
   {
     size_t N = BezierRefList::block_iterator_unsafe(prims).size();
 
@@ -782,29 +821,29 @@ namespace embree
       throw std::runtime_error("unknown primitive type");
   }
 
-  BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const GeneralSplit& split)
+  BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo)
   {
-    size_t Ntris    = TriRefList   ::block_iterator_unsafe(tris   ).size();
+    size_t Ntris    = TriRefList   ::block_iterator_unsafe(tris   ).size(); // FIXME:
     size_t Nbeziers = BezierRefList::block_iterator_unsafe(beziers).size();
     if (Ntris == 0) 
-      return leaf(threadIndex,depth,beziers,split);
+      return leaf(threadIndex,depth,beziers,pinfo);
     else if (Nbeziers == 0)
-      return leaf(threadIndex,depth,tris,split);
+      return leaf(threadIndex,depth,tris,pinfo);
     
     BVH4::UANode* node = bvh->allocUANode(threadIndex);
-    node->set(0,computeAlignedBounds(tris   ),leaf(threadIndex,depth+1,tris   ,split));
-    node->set(1,computeAlignedBounds(beziers),leaf(threadIndex,depth+1,beziers,split));
+    node->set(0,computeAlignedBounds(tris   ),leaf(threadIndex,depth+1,tris   ,pinfo));
+    node->set(1,computeAlignedBounds(beziers),leaf(threadIndex,depth+1,beziers,pinfo));
     return bvh->encodeNode(node);
   }
 
-  typename BVH4Builder2::NodeRef BVH4Builder2::recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const GeneralSplit& split)
+  typename BVH4Builder2::NodeRef BVH4Builder2::recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo, const GeneralSplit& split)
   {
     //PRINT(depth);
     //PRINT(split.size());
     
     /*! compute leaf and split cost */
-    const float leafSAH  = /*primTy.intCost*/split.leafSAH ();
-    const float splitSAH = /*primTy.intCost*/split.splitSAH() + BVH4::travCost*split.halfAreaGeomBounds;
+    const float leafSAH  = /*primTy.intCost*/pinfo.leafSAH ();
+    const float splitSAH = /*primTy.intCost*/split.splitSAH() + BVH4::travCost*halfArea(pinfo.geomBounds);
     //PRINT(leafSAH);
     //PRINT(splitSAH);
     //PRINT(split.pinfo.size());
@@ -813,14 +852,15 @@ namespace embree
     //assert(split.size() == 0 || leafSAH >= 0 && splitSAH >= 0);
     
     /*! create a leaf node when threshold reached or SAH tells us to stop */
-    if (split.size() <= minLeafSize || depth > BVH4::maxBuildDepth || (split.size() <= maxLeafSize && leafSAH <= splitSAH)) {
-      return leaf(threadIndex,depth,tris,beziers,split);
+    if (pinfo.size() <= minLeafSize || depth > BVH4::maxBuildDepth || (pinfo.size() <= maxLeafSize && leafSAH <= splitSAH)) {
+      return leaf(threadIndex,depth,tris,beziers,pinfo);
     }
     
     /*! initialize child list */
     TriRefList    ctris   [BVH4::N]; ctris   [0] = tris;
     BezierRefList cbeziers[BVH4::N]; cbeziers[0] = beziers;
     GeneralSplit  csplit[BVH4::N];   csplit  [0] = split;
+    PrimInfo      cpinfo[BVH4::N]; cpinfo[0] = pinfo;
     size_t numChildren = 1;
     bool aligned = true;
 
@@ -832,21 +872,23 @@ namespace embree
       ssize_t bestChild = -1;
       for (size_t i=0; i<numChildren; i++) 
       {
-        float dSAH = csplit[i].splitSAH()-csplit[i].leafSAH();
-        if (csplit[i].size() <= minLeafSize) continue; 
-        if (csplit[i].size() > maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
+        float dSAH = csplit[i].splitSAH()-cpinfo[i].leafSAH();
+        if (cpinfo[i].size() <= minLeafSize) continue; 
+        if (cpinfo[i].size() > maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
         if (dSAH <= bestSAH) { bestChild = i; bestSAH = dSAH; }
       }
       if (bestChild == -1) break;
       
       /*! perform best found split and find new splits */
       aligned &= csplit[bestChild].aligned;
-      TriRefList    ltris,   rtris;    csplit[bestChild].split(threadIndex,&allocTriRefs,   ctris[bestChild],   ltris,   rtris);
+      TriRefList    ltris,   rtris;    csplit[bestChild].split(threadIndex,&allocTriRefs,   ctris[bestChild],   ltris,rtris);
       BezierRefList lbeziers,rbeziers; csplit[bestChild].split(threadIndex,&allocBezierRefs,cbeziers[bestChild],lbeziers,rbeziers);
+      PrimInfo linfo = computePrimInfo(ltris,lbeziers);
+      PrimInfo rinfo = computePrimInfo(rtris,rbeziers);
       GeneralSplit lsplit; heuristic(ltris,lbeziers,lsplit);
       GeneralSplit rsplit; heuristic(rtris,rbeziers,rsplit);
-      ctris[bestChild  ] = ltris; cbeziers[bestChild  ] = lbeziers; csplit[bestChild  ] = lsplit;
-      ctris[numChildren] = rtris; cbeziers[numChildren] = rbeziers; csplit[numChildren] = rsplit;
+      ctris[bestChild  ] = ltris; cbeziers[bestChild  ] = lbeziers; cpinfo[bestChild] = linfo; csplit[bestChild  ] = lsplit;
+      ctris[numChildren] = rtris; cbeziers[numChildren] = rbeziers; cpinfo[numChildren] = rinfo; csplit[numChildren] = rsplit;
       numChildren++;
       
     } while (numChildren < BVH4::N);
@@ -857,7 +899,7 @@ namespace embree
       BVH4::UANode* node = bvh->allocUANode(threadIndex);
       for (size_t i=0; i<numChildren; i++) {
         const BBox3fa bounds = computeAlignedBounds(ctris[i],cbeziers[i]);
-        node->set(i,bounds,recurse(threadIndex,depth+1,ctris[i],cbeziers[i],csplit[i]));
+        node->set(i,bounds,recurse(threadIndex,depth+1,ctris[i],cbeziers[i],cpinfo[i],csplit[i]));
       }
       return bvh->encodeNode(node);
     } 
@@ -869,7 +911,7 @@ namespace embree
       for (size_t i=0; i<numChildren; i++) {
         const LinearSpace3fa hairspace = computeHairSpace(cbeziers[i]);
         const NAABBox3fa bounds = computeAlignedBounds(ctris[i],cbeziers[i],hairspace);
-        node->set(i,bounds,recurse(threadIndex,depth+1,ctris[i],cbeziers[i],csplit[i]));
+        node->set(i,bounds,recurse(threadIndex,depth+1,ctris[i],cbeziers[i],cpinfo[i],csplit[i])); // FIXME: propagate unaligned bounds
       }
       return bvh->encodeNode(node);
     }

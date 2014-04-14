@@ -150,13 +150,6 @@ namespace embree
       ThreadPrimBlockAllocator* threadPrimBlockAllocator;  //!< Thread local allocator
     };
 
-    class ObjectSplitBinner
-  {
-    /*! Maximal number of bins. */
-    static const size_t maxBins = 32;
-
-  public:
-
     /*! stores bounding information for a set of primitives */
     class PrimInfo
     {
@@ -164,10 +157,15 @@ namespace embree
       __forceinline PrimInfo () 
         : num(0), numTriangles(0), numBeziers(0), geomBounds(empty), centBounds(empty) {}
 
+      __forceinline PrimInfo (size_t numTriangles, size_t numBeziers, const BBox3fa& geomBounds, const BBox3fa& centBounds) 
+        : num(numTriangles+numBeziers), numTriangles(numTriangles), numBeziers(numBeziers), geomBounds(geomBounds), centBounds(centBounds) {}
+
       /*! returns the number of primitives */
       __forceinline size_t size() const { 
         return num; 
       }
+
+      __forceinline float leafSAH() const { return halfArea(geomBounds)*(blocks(numTriangles) + numBeziers); }
 
     public:
       size_t num;          //!< number of primitives
@@ -175,6 +173,13 @@ namespace embree
       BBox3fa geomBounds;   //!< geometry bounds of primitives
       BBox3fa centBounds;   //!< centroid bounds of primitives
     };
+
+    class ObjectSplitBinner
+  {
+    /*! Maximal number of bins. */
+    static const size_t maxBins = 32;
+
+  public:
     
     /*! mapping from bounding boxes to bins */
     class Mapping
@@ -219,24 +224,14 @@ namespace embree
       /*! create an invalid split by default */
       __forceinline Split () : dim(0), pos(0), cost(inf), aligned(true) {}
       
-      __forceinline float leafSAH() const { return halfArea(pinfo.geomBounds)*(blocks(pinfo.numTriangles) + pinfo.numBeziers); }
-
       /*! return SAH cost of performing the split */
       __forceinline float splitSAH() const { return cost; } 
 
-      /*! splitting of the primitive if required */
-      __forceinline void split(const PrimRef& prim, PrimRef& lprim_o, PrimRef& rprim_o) const {
-        new (&lprim_o) PrimRef(empty,-1,-1);
-        new (&rprim_o) PrimRef(empty,-1,-1);
-        assert(false);
-      }
-      
       void split(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims);
 
       void split(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims);
 
     public:
-      PrimInfo pinfo;
       Mapping mapping;    //!< Mapping to bins
       int dim;            //!< Best object split dimension
       int pos;            //!< Best object split position
@@ -272,13 +267,7 @@ namespace embree
 
     /*! bin an array of beziers */
     void bin(const Bezier1* prim, size_t num);
-    
-    /*! Compute the number of blocks occupied for each dimension. */
-    __forceinline static Vec3ia blocks(const Vec3ia& a) { return (a+Vec3ia((1 << logBlockSize)-1)) >> logBlockSize; }
-    
-    /*! Compute the number of blocks occupied in one dimension. */
-    __forceinline static int  blocks(size_t a) { return (int)((a+((1LL << logBlockSize)-1)) >> logBlockSize); }
-  
+      
   public:
     PrimInfo pinfo;                //!< bounding information of geometry
     Mapping mapping;               //!< mapping from geometry to the bins
@@ -297,34 +286,10 @@ namespace embree
   public:
     ObjectTypePartitioning (TriRefList& prims, BezierRefList& beziers);
 
-    /*! Compute the number of blocks occupied in one dimension. */
-    __forceinline static int  blocks(size_t a) { return (int)((a+((1LL << logBlockSize)-1)) >> logBlockSize); }
-    
-    /*! stores bounding information for a set of primitives */
-    class PrimInfo
-    {
-    public:
-      __forceinline PrimInfo () 
-        : num(0), numTriangles(0), numBeziers(0), geomBounds(empty), centBounds(empty) {}
-
-      /*! returns the number of primitives */
-      __forceinline size_t size() const { 
-        return num; 
-      }
-
-    public:
-      size_t num;          //!< number of primitives
-      size_t numTriangles, numBeziers;
-      BBox3fa geomBounds;   //!< geometry bounds of primitives
-      BBox3fa centBounds;   //!< centroid bounds of primitives
-    };
-
   public:
     class Split 
     { 
     public:
-      __forceinline float leafSAH() const { return halfArea(pinfo.geomBounds)*(blocks(pinfo.numTriangles) + pinfo.numBeziers); }
-
       /*! return SAH cost of performing the split */
       __forceinline float splitSAH() const { return cost; } 
 
@@ -332,7 +297,7 @@ namespace embree
       void split(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims);
 
     public:
-      PrimInfo pinfo;
+      //PrimInfo pinfo;
       float cost;
     };
 
@@ -349,23 +314,23 @@ namespace embree
       __forceinline GeneralSplit () {}
 
       __forceinline GeneralSplit (size_t N) 
-        : type(FALLBACK_SPLIT), aligned(true), leaf_sah(0), split_sah(inf), halfAreaGeomBounds(0.0f), num(N) {}
+        : type(FALLBACK_SPLIT), aligned(true), split_sah(inf), num(N) {}
 
       __forceinline GeneralSplit(const ObjectSplitBinner::Split& split, bool aligned_in) {
         type = OBJECT_SPLIT; aligned = aligned_in;
-        leaf_sah = split.leafSAH();
+        //leaf_sah = split.leafSAH();
         split_sah = split.splitSAH();
-        halfAreaGeomBounds = halfArea(split.pinfo.geomBounds);
-        num = split.pinfo.size();
+        //halfAreaGeomBounds = halfArea(split.pinfo.geomBounds);
+        //num = split.pinfo.size();
         new (data) ObjectSplitBinner::Split(split);
       }
 
       __forceinline GeneralSplit(const ObjectTypePartitioning::Split& split) {
         type = TYPE_SPLIT; aligned = true;
-        leaf_sah = split.leafSAH();
+        //leaf_sah = split.leafSAH();
         split_sah = split.splitSAH();
-        halfAreaGeomBounds = halfArea(split.pinfo.geomBounds);
-        num = split.pinfo.size();
+        //halfAreaGeomBounds = halfArea(split.pinfo.geomBounds);
+        //num = split.pinfo.size();
         new (data) ObjectTypePartitioning::Split(split);
       }
 
@@ -389,21 +354,23 @@ namespace embree
         }
       }
 
-      __forceinline float leafSAH () const { return leaf_sah; }
+      //__forceinline float leafSAH () const { return leaf_sah; }
       __forceinline float splitSAH() const { return split_sah; }
-      __forceinline size_t size() const { return num; }
+      //__forceinline size_t size() const { return num; }
       
-      float halfAreaGeomBounds;
+      //float halfAreaGeomBounds;
       bool aligned;
     private:
       Type type;
-      float leaf_sah;
+      //float leaf_sah;
       float split_sah;
       size_t num;
       __aligned(16) char data[256];
     };
   
   public:
+
+    static const PrimInfo computePrimInfo(TriRefList& tris, BezierRefList& beziers);
 
     /*! calculate bounds for range of primitives */
     static const BBox3fa computeAlignedBounds(TriRefList& tris);
@@ -427,10 +394,10 @@ namespace embree
     BVH4Builder2 (BVH4* bvh, BuildSource* source, void* geometry, const size_t minLeafSize = 1, const size_t maxLeafSize = inf);
 
     /*! creates a leaf node */
-    NodeRef leaf   (size_t threadIndex, size_t depth, TriRefList& prims   , const GeneralSplit& split);
-    NodeRef leaf   (size_t threadIndex, size_t depth, BezierRefList& prims, const GeneralSplit& split);
-    NodeRef leaf   (size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const GeneralSplit& split);
-    NodeRef recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const GeneralSplit& split);
+    NodeRef leaf   (size_t threadIndex, size_t depth, TriRefList& prims   , const PrimInfo& pinfo);
+    NodeRef leaf   (size_t threadIndex, size_t depth, BezierRefList& prims, const PrimInfo& pinfo);
+    NodeRef leaf   (size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo);
+    NodeRef recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo, const GeneralSplit& split);
 
     void heuristic(TriRefList& tris, BezierRefList& beziers, GeneralSplit& split);
 
@@ -443,6 +410,12 @@ namespace embree
     size_t maxLeafSize;                 //!< maximal size of a leaf
     PrimRefBlockAlloc<Bezier1> allocBezierRefs;                 //!< Allocator for primitive blocks
     PrimRefBlockAlloc<PrimRef> allocTriRefs;                 //!< Allocator for primitive blocks
+
+    /*! Compute the number of blocks occupied for each dimension. */
+    __forceinline static Vec3ia blocks(const Vec3ia& a) { return (a+Vec3ia((1 << logBlockSize)-1)) >> logBlockSize; }
+    
+    /*! Compute the number of blocks occupied in one dimension. */
+    __forceinline static int  blocks(size_t a) { return (int)((a+((1LL << logBlockSize)-1)) >> logBlockSize); }
 
   public:
     BVH4* bvh;                      //!< Output BVH4
