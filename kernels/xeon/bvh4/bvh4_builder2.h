@@ -307,6 +307,9 @@ namespace embree
 
     static const LinearSpace3fa computeHairSpace(BezierRefList& prims);
 
+    void split_fallback(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims);
+    void split_fallback(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims);
+
     /*! builder entry point */
     void build(size_t threadIndex, size_t threadCount);
 
@@ -327,7 +330,7 @@ namespace embree
     void* geometry;           //!< input geometry
     
   public:
-    const PrimitiveType& primTy;          //!< triangle type stored in BVH4
+    //const PrimitiveType& primTy;          //!< triangle type stored in BVH4
     size_t minLeafSize;                 //!< minimal size of a leaf
     size_t maxLeafSize;                 //!< maximal size of a leaf
     PrimRefBlockAlloc<Bezier1> allocBezierRefs;                 //!< Allocator for primitive blocks

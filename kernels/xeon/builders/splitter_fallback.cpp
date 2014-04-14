@@ -56,6 +56,7 @@ namespace embree
           rblock->insert(prim);
         }
       }
+      alloc->free(threadIndex,block);
     }
     new (&linfo) PrimInfo(lnum,lgeomBounds,lcentBounds,pinfo);
     new (&rinfo) PrimInfo(rnum,rgeomBounds,rcentBounds,pinfo);
@@ -114,6 +115,7 @@ namespace embree
           rblock->insert(prim);
         }
       }
+      alloc->free(threadIndex,block);
     }
     new (&linfo) PrimInfo(lnum,lgeomBounds,lcentBounds,pinfo);
     new (&rinfo) PrimInfo(rnum,rgeomBounds,rcentBounds,pinfo);
