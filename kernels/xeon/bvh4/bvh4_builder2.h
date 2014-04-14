@@ -291,7 +291,60 @@ namespace embree
 
     Split split;
   };
+    
+    class __aligned(16) GeneralSplit
+    {
+      enum Type { OBJECT_SPLIT, SPATIAL_SPLIT, TYPE_SPLIT, FALLBACK_SPLIT };
 
+    public:
+
+      __forceinline GeneralSplit () {}
+
+      __forceinline GeneralSplit (size_t N) 
+        : type(FALLBACK_SPLIT), aligned(true), leaf_sah(0), split_sah(inf), halfAreaGeomBounds(0.0f), num(N) {}
+
+      __forceinline GeneralSplit(const ObjectSplitBinner::Split& split, bool aligned_in) {
+        type = OBJECT_SPLIT; aligned = aligned_in;
+        leaf_sah = split.leafSAH();
+        split_sah = split.splitSAH();
+        halfAreaGeomBounds = halfArea(split.pinfo.geomBounds);
+        num = split.pinfo.size();
+        new (data) ObjectSplitBinner::Split(split);
+      }
+
+      __forceinline void split(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims) 
+      {
+        switch (type) {
+        case OBJECT_SPLIT : ((ObjectSplitBinner::Split* )data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
+          //case SPATIAL_SPLIT: ((SpatialSplitBinner::Split*)data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
+          //case TYPE_SPLIT   : ((TypeSplitBinner::Split*   )data)->split(threadIndex,alloc,prims,lprims,rprims); break;         
+        default           : split_fallback(threadIndex,alloc,prims,lprims,rprims); break;
+        }
+      }
+
+      void split(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims)
+      {
+        switch (type) {
+        case OBJECT_SPLIT : ((ObjectSplitBinner::Split* )data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
+          //case SPATIAL_SPLIT: ((SpatialSplitBinner::Split*)data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
+          //case TYPE_SPLIT   : ((TypeSplitBinner::Split*   )data)->split(threadIndex,alloc,prims,lprims,rprims); break;         
+        default           : split_fallback(threadIndex,alloc,prims,lprims,rprims); break;
+        }
+      }
+
+      __forceinline float leafSAH () const { return leaf_sah; }
+      __forceinline float splitSAH() const { return split_sah; }
+      __forceinline size_t size() const { return num; }
+      
+      float halfAreaGeomBounds;
+      bool aligned;
+    private:
+      Type type;
+      float leaf_sah;
+      float split_sah;
+      size_t num;
+      __aligned(16) char data[256];
+    };
   
   public:
 
@@ -307,8 +360,8 @@ namespace embree
 
     static const LinearSpace3fa computeHairSpace(BezierRefList& prims);
 
-    void split_fallback(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims);
-    void split_fallback(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims);
+    static void split_fallback(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims);
+    static void split_fallback(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims);
 
     /*! builder entry point */
     void build(size_t threadIndex, size_t threadCount);
@@ -317,25 +370,22 @@ namespace embree
     BVH4Builder2 (BVH4* bvh, BuildSource* source, void* geometry, const size_t minLeafSize = 1, const size_t maxLeafSize = inf);
 
     /*! creates a leaf node */
-    NodeRef leaf(size_t threadIndex, size_t depth, TriRefList& prims, const ObjectSplitBinner::Split& split);
-    NodeRef leaf(size_t threadIndex, size_t depth, BezierRefList& prims, const ObjectSplitBinner::Split& split);
-    NodeRef leaf(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const ObjectSplitBinner::Split& split);
+    NodeRef leaf   (size_t threadIndex, size_t depth, TriRefList& prims   , const GeneralSplit& split);
+    NodeRef leaf   (size_t threadIndex, size_t depth, BezierRefList& prims, const GeneralSplit& split);
+    NodeRef leaf   (size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const GeneralSplit& split);
+    NodeRef recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const GeneralSplit& split);
 
-    NodeRef recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const ObjectSplitBinner::Split& split);
-
-    void heuristic(TriRefList& tris, BezierRefList& beziers, ObjectSplitBinner::Split& split);
+    void heuristic(TriRefList& tris, BezierRefList& beziers, GeneralSplit& split);
 
   private:
     BuildSource* source;      //!< build source interface
     void* geometry;           //!< input geometry
     
   public:
-    //const PrimitiveType& primTy;          //!< triangle type stored in BVH4
     size_t minLeafSize;                 //!< minimal size of a leaf
     size_t maxLeafSize;                 //!< maximal size of a leaf
     PrimRefBlockAlloc<Bezier1> allocBezierRefs;                 //!< Allocator for primitive blocks
     PrimRefBlockAlloc<PrimRef> allocTriRefs;                 //!< Allocator for primitive blocks
-    //TaskScheduler::QUEUE taskQueue;     //!< Task queue to use
 
   public:
     BVH4* bvh;                      //!< Output BVH4

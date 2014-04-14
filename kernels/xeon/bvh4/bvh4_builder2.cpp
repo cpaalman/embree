@@ -552,36 +552,7 @@ namespace embree
         }
       }
     }
-    
-    /* perform binning */
-    ObjectSplitBinner heuristic(one,tris,beziers); 
-
-#if 0
-    float bestSAH = inf;
-    ObjectBinning object_binning_aligned(tris,beziers);
-    bestSAH = min(bestSAH,object_binning_aligned.sah());
-
-    SpatialBinning spatial_binning_aligned(tris,beziers);
-    bestSAH = min(bestSAH,spatial_binning_aligned.sah());
-    
-    Space hairspace = computeSpace(tris,beziers);
-    ObjectBinning object_binning_unaligned(tris,beziers,hairspace);
-    bestSAH = min(bestSAH,object_binning_unaligned.sah());
-    
-    SpatialBinning spatial_binning_unaligned(tris,beziers,hairspace);
-    bestSAH = min(bestSAH,spatial_binning_unaligned.sah());
-
-    Split split;
-    if (bestSAH == object_binning_aligned.sah()) 
-      new (&split) Split(object_binning_aligned.split);
-    else if (bestSAH == spatial_binning_aligned.sah()) 
-      new (&split) Split(spatial_binning_aligned.split);
-    else if (bestSAH == object_binning_unaligned.sah()) 
-      new (&split) Split(object_binning_unaligned.split);
-    else if (bestSAH == spatial_binning_unaligned.sah()) 
-      new (&split) Split(spatial_binning_unaligned.split);
-    
-#endif
+    GeneralSplit split; heuristic(tris,beziers,split);
 
     /* perform binning */
     bvh->numPrimitives = numPrimitives;
@@ -589,7 +560,7 @@ namespace embree
     //if (primTy.needVertices) bvh->numVertices = numVertices; // FIXME
     //else                     bvh->numVertices = 0;
 
-    bvh->root = recurse(threadIndex,1,tris,beziers,heuristic.split);
+    bvh->root = recurse(threadIndex,1,tris,beziers,split);
 
     /* free all temporary blocks */
     Alloc::global.clear();
@@ -604,7 +575,7 @@ namespace embree
     }
   }
 
-  void BVH4Builder2::heuristic(TriRefList& tris, BezierRefList& beziers, ObjectSplitBinner::Split& split)
+  void BVH4Builder2::heuristic(TriRefList& tris, BezierRefList& beziers, GeneralSplit& split)
   {
     /* perform binning */
 #if 0
@@ -628,27 +599,21 @@ namespace embree
     //SpatialBinning spatial_binning_unaligned(tris,beziers,hairspace);
     //bestSAH = min(bestSAH,spatial_binning_unaligned.split.splitSAH());
 
-    if (bestSAH == object_binning_aligned.split.splitSAH()) {
-      new (&split) ObjectSplitBinner::Split(object_binning_aligned.split);
-      split.aligned = true;
-    }
-    //else if (bestSAH == spatial_binning_aligned.split.splitSAH()) {
-    //new (&split) Split(spatial_binning_aligned.split);
-    //split.aligned = true;
-    //}
-    else if (bestSAH == object_binning_unaligned.split.splitSAH()) {
-      new (&split) ObjectSplitBinner::Split(object_binning_unaligned.split);
-      split.aligned = false;
-    }
-    //else if (bestSAH == spatial_binning_unaligned.split.splitSAH()) {
-    //new (&split) Split(spatial_binning_unaligned.split);
-    //split.aligned = true;
-    //}
+    if (bestSAH == object_binning_aligned.split.splitSAH())
+      new (&split) GeneralSplit(object_binning_aligned.split,true);
+    //else if (bestSAH == spatial_binning_aligned.split.splitSAH()) 
+    //new (&split) GeneralSplit(spatial_binning_aligned.split,true);
+    else if (bestSAH == object_binning_unaligned.split.splitSAH())
+      new (&split) GeneralSplit(object_binning_unaligned.split,false);
+    //else if (bestSAH == spatial_binning_unaligned.split.splitSAH())
+    //new (&split) GeneralSplit(spatial_binning_unaligned.split,false);
+    else
+      new (&split) GeneralSplit(object_binning_aligned.pinfo.size());
     
 #endif
   }
 
-  BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, TriRefList& prims, const ObjectSplitBinner::Split& split)
+  BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, TriRefList& prims, const GeneralSplit& split)
   {
     size_t N = bvh->primTy[0]->blocks(TriRefList::block_iterator_unsafe(prims).size());
 
@@ -699,7 +664,7 @@ namespace embree
       throw std::runtime_error("unknown primitive type");
   }
 
-  BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, BezierRefList& prims, const ObjectSplitBinner::Split& split)
+  BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, BezierRefList& prims, const GeneralSplit& split)
   {
     size_t N = BezierRefList::block_iterator_unsafe(prims).size();
 
@@ -744,7 +709,7 @@ namespace embree
       throw std::runtime_error("unknown primitive type");
   }
 
-  BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const ObjectSplitBinner::Split& split)
+  BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const GeneralSplit& split)
   {
     size_t Ntris    = TriRefList   ::block_iterator_unsafe(tris   ).size();
     size_t Nbeziers = BezierRefList::block_iterator_unsafe(beziers).size();
@@ -759,29 +724,29 @@ namespace embree
     return bvh->encodeNode(node);
   }
 
-  typename BVH4Builder2::NodeRef BVH4Builder2::recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const ObjectSplitBinner::Split& split)
+  typename BVH4Builder2::NodeRef BVH4Builder2::recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const GeneralSplit& split)
   {
     //PRINT(depth);
 
     /*! compute leaf and split cost */
     const float leafSAH  = /*primTy.intCost*/split.leafSAH ();
-    const float splitSAH = /*primTy.intCost*/split.splitSAH() + BVH4::travCost*halfArea(split.pinfo.geomBounds);
+    const float splitSAH = /*primTy.intCost*/split.splitSAH() + BVH4::travCost*split.halfAreaGeomBounds;
     //PRINT(leafSAH);
     //PRINT(splitSAH);
     //PRINT(split.pinfo.size());
     //PRINT(maxLeafSize);
-    assert(TriRefList::block_iterator_unsafe(prims).size() == split.pinfo.size());
-    assert(split.pinfo.size() == 0 || leafSAH >= 0 && splitSAH >= 0);
+    assert(TriRefList::block_iterator_unsafe(prims).size() == split.size());
+    assert(split.size() == 0 || leafSAH >= 0 && splitSAH >= 0);
     
     /*! create a leaf node when threshold reached or SAH tells us to stop */
-    if (split.pinfo.size() <= minLeafSize || depth > BVH4::maxBuildDepth || (split.pinfo.size() <= maxLeafSize && leafSAH <= splitSAH)) {
+    if (split.size() <= minLeafSize || depth > BVH4::maxBuildDepth || (split.size() <= maxLeafSize && leafSAH <= splitSAH)) {
       return leaf(threadIndex,depth,tris,beziers,split);
     }
     
     /*! initialize child list */
     TriRefList    ctris   [BVH4::N]; ctris   [0] = tris;
     BezierRefList cbeziers[BVH4::N]; cbeziers[0] = beziers;
-    ObjectSplitBinner::Split csplit[BVH4::N]; csplit[0] = split;
+    GeneralSplit  csplit[BVH4::N];   csplit  [0] = split;
     size_t numChildren = 1;
     bool aligned = true;
 
@@ -794,8 +759,8 @@ namespace embree
       for (size_t i=0; i<numChildren; i++) 
       {
         float dSAH = csplit[i].splitSAH()-csplit[i].leafSAH();
-        if (csplit[i].pinfo.size() <= minLeafSize) continue; 
-        if (csplit[i].pinfo.size() > maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
+        if (csplit[i].size() <= minLeafSize) continue; 
+        if (csplit[i].size() > maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
         if (dSAH <= bestSAH) { bestChild = i; bestSAH = dSAH; }
       }
       if (bestChild == -1) break;
@@ -804,8 +769,8 @@ namespace embree
       aligned &= csplit[bestChild].aligned;
       TriRefList    ltris,   rtris;    csplit[bestChild].split(threadIndex,&allocTriRefs,   ctris[bestChild],   ltris,   rtris);
       BezierRefList lbeziers,rbeziers; csplit[bestChild].split(threadIndex,&allocBezierRefs,cbeziers[bestChild],lbeziers,rbeziers);
-      ObjectSplitBinner::Split lsplit; heuristic(ltris,lbeziers,lsplit);
-      ObjectSplitBinner::Split rsplit; heuristic(rtris,rbeziers,rsplit);
+      GeneralSplit lsplit; heuristic(ltris,lbeziers,lsplit);
+      GeneralSplit rsplit; heuristic(rtris,rbeziers,rsplit);
       ctris[bestChild  ] = ltris; cbeziers[bestChild  ] = lbeziers; csplit[bestChild  ] = lsplit;
       ctris[numChildren] = rtris; cbeziers[numChildren] = rbeziers; csplit[numChildren] = rsplit;
       numChildren++;
