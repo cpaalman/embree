@@ -217,7 +217,7 @@ namespace embree
     public:
       
       /*! create an invalid split by default */
-      __forceinline Split () : dim(0), pos(0), cost(inf) {}
+      __forceinline Split () : dim(0), pos(0), cost(inf), aligned(true) {}
       
       __forceinline float leafSAH() const { return halfArea(pinfo.geomBounds)*(blocks(pinfo.numTriangles) + pinfo.numBeziers); }
 
@@ -242,6 +242,7 @@ namespace embree
       int pos;            //!< Best object split position
       float cost;         //!< SAH cost of performing best object split
       LinearSpace3fa space;
+      bool aligned;
     };
     
     /*! default constructor */

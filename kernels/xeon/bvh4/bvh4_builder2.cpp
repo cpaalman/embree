@@ -536,33 +536,43 @@ namespace embree
   void BVH4Builder2::heuristic(TriRefList& tris, BezierRefList& beziers, ObjectSplitBinner::Split& split)
   {
     /* perform binning */
+#if 0
     ObjectSplitBinner heuristic(one,tris,beziers); 
     split = heuristic.split;
+    split.aligned = true;
 
-#if 0
+#else
+
     float bestSAH = inf;
-    ObjectBinning object_binning_aligned(tris,beziers);
-    bestSAH = min(bestSAH,object_binning_aligned.sah());
+    ObjectSplitBinner object_binning_aligned(one,tris,beziers);
+    bestSAH = min(bestSAH,object_binning_aligned.split.splitSAH());
 
-    SpatialBinning spatial_binning_aligned(tris,beziers);
-    bestSAH = min(bestSAH,spatial_binning_aligned.sah());
+    //SpatialBinning spatial_binning_aligned(tris,beziers);
+    //bestSAH = min(bestSAH,spatial_binning_aligned.split.splitSAH());
     
-    Space hairspace = computeSpace(tris,beziers);
-    ObjectBinning object_binning_unaligned(tris,beziers,hairspace);
-    bestSAH = min(bestSAH,object_binning_unaligned.sah());
+    const LinearSpace3fa hairspace = computeHairSpace(beziers);
+    ObjectSplitBinner object_binning_unaligned(hairspace,tris,beziers);
+    bestSAH = min(bestSAH,object_binning_unaligned.split.splitSAH());
     
-    SpatialBinning spatial_binning_unaligned(tris,beziers,hairspace);
-    bestSAH = min(bestSAH,spatial_binning_unaligned.sah());
+    //SpatialBinning spatial_binning_unaligned(tris,beziers,hairspace);
+    //bestSAH = min(bestSAH,spatial_binning_unaligned.split.splitSAH());
 
-    Split split;
-    if (bestSAH == object_binning_aligned.sah()) 
-      new (&split) Split(object_binning_aligned.split);
-    else if (bestSAH == spatial_binning_aligned.sah()) 
-      new (&split) Split(spatial_binning_aligned.split);
-    else if (bestSAH == object_binning_unaligned.sah()) 
-      new (&split) Split(object_binning_unaligned.split);
-    else if (bestSAH == spatial_binning_unaligned.sah()) 
-      new (&split) Split(spatial_binning_unaligned.split);
+    if (bestSAH == object_binning_aligned.split.splitSAH()) {
+      new (&split) ObjectSplitBinner::Split(object_binning_aligned.split);
+      split.aligned = true;
+    }
+    //else if (bestSAH == spatial_binning_aligned.split.splitSAH()) {
+    //new (&split) Split(spatial_binning_aligned.split);
+    //split.aligned = true;
+    //}
+    else if (bestSAH == object_binning_unaligned.split.splitSAH()) {
+      new (&split) ObjectSplitBinner::Split(object_binning_unaligned.split);
+      split.aligned = false;
+    }
+    //else if (bestSAH == spatial_binning_unaligned.split.splitSAH()) {
+    //new (&split) Split(spatial_binning_unaligned.split);
+    //split.aligned = true;
+    //}
     
 #endif
   }
@@ -696,7 +706,8 @@ namespace embree
     BezierRefList cbeziers[BVH4::N]; cbeziers[0] = beziers;
     ObjectSplitBinner::Split csplit[BVH4::N]; csplit[0] = split;
     size_t numChildren = 1;
-    
+    bool aligned = true;
+
     /*! split until node is full or SAH tells us to stop */
     do {
       
@@ -713,6 +724,7 @@ namespace embree
       if (bestChild == -1) break;
       
       /*! perform best found split and find new splits */
+      aligned &= csplit[bestChild].aligned;
       TriRefList    ltris,   rtris;    csplit[bestChild].split(threadIndex,&allocTriRefs,   ctris[bestChild],   ltris,   rtris);
       BezierRefList lbeziers,rbeziers; csplit[bestChild].split(threadIndex,&allocBezierRefs,cbeziers[bestChild],lbeziers,rbeziers);
       //ObjectSplitBinner lheuristic(ltris,lbeziers); 
@@ -725,11 +737,28 @@ namespace embree
       
     } while (numChildren < BVH4::N);
     
-    /*! create an inner node */
-    BVH4::UANode* node = bvh->allocUANode(threadIndex);
-    for (size_t i=0; i<numChildren; i++) 
-      node->set(i,csplit[i].pinfo.geomBounds,recurse(threadIndex,depth+1,ctris[i],cbeziers[i],csplit[i]));
-    return bvh->encodeNode(node);
+    /*! create an aligned node */
+    if (aligned)
+    {
+      BVH4::UANode* node = bvh->allocUANode(threadIndex);
+      for (size_t i=0; i<numChildren; i++) {
+        const BBox3fa bounds = computeAlignedBounds(ctris[i],cbeziers[i]);
+        node->set(i,bounds,recurse(threadIndex,depth+1,ctris[i],cbeziers[i],csplit[i]));
+      }
+      return bvh->encodeNode(node);
+    } 
+
+    /*! create an unaligned node */
+    else
+    {
+      BVH4::UUNode* node = bvh->allocUUNode(threadIndex);
+      for (size_t i=0; i<numChildren; i++) {
+        const LinearSpace3fa hairspace = computeHairSpace(cbeziers[i]);
+        const NAABBox3fa bounds = computeAlignedBounds(ctris[i],cbeziers[i],hairspace);
+        node->set(i,bounds,recurse(threadIndex,depth+1,ctris[i],cbeziers[i],csplit[i]));
+      }
+      return bvh->encodeNode(node);
+    }
   }
   
   Builder* BVH4Builder2ObjectSplit4 (void* accel, BuildSource* source, void* geometry, const size_t minLeafSize, const size_t maxLeafSize) {

@@ -304,6 +304,12 @@ namespace embree
         Node::set(i,childID);
       }
 
+      /*! Sets bounding box and child. */
+      __forceinline void set(size_t i, const NAABBox3fa& b, const NodeRef& childID) {
+        set(i,b);
+        set(i,childID);
+      }
+
       /*! Returns the extend of the bounds of the ith child */
       __forceinline Vec3fa extend(size_t i) const {
         assert(i<N);
