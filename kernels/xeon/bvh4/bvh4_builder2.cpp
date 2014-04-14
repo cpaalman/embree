@@ -410,7 +410,10 @@ namespace embree
     split.pinfo.geomBounds.extend(bezierGeomBounds);
     split.pinfo.centBounds.extend(bezierCentBounds);
 
-    split.cost = blocks(split.pinfo.numTriangles)*safeHalfArea(triGeomBounds) + split.pinfo.numBeziers*safeHalfArea(bezierGeomBounds);
+    if (split.pinfo.numTriangles != 0 && split.pinfo.numBeziers != 0)
+      split.cost = blocks(split.pinfo.numTriangles)*safeHalfArea(triGeomBounds) + split.pinfo.numBeziers*safeHalfArea(bezierGeomBounds);
+    else 
+      split.cost = inf;
   }
     
   void BVH4Builder2::ObjectTypePartitioning::Split::split(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims)
@@ -644,11 +647,11 @@ namespace embree
 
     ObjectTypePartitioning object_type(tris,beziers);
     bestSAH = min(bestSAH,object_type.split.splitSAH());
-    PRINT(object_type.split.splitSAH());
+    //PRINT(object_type.split.splitSAH());
 
     ObjectSplitBinner object_binning_aligned(one,tris,beziers);
     bestSAH = min(bestSAH,object_binning_aligned.split.splitSAH());
-    PRINT(object_binning_aligned.split.splitSAH());
+    //PRINT(object_binning_aligned.split.splitSAH());
 
     //SpatialBinning spatial_binning_aligned(tris,beziers);
     //bestSAH = min(bestSAH,spatial_binning_aligned.split.splitSAH());
@@ -660,8 +663,8 @@ namespace embree
     //SpatialBinning spatial_binning_unaligned(tris,beziers,hairspace);
     //bestSAH = min(bestSAH,spatial_binning_unaligned.split.splitSAH());
 
-    if (bestSAH == object_type.split.splitSAH())
-      new (&split) GeneralSplit(object_type.split);
+    if (bestSAH == float(inf))
+      new (&split) GeneralSplit(object_binning_aligned.pinfo.size());
     else if (bestSAH == object_binning_aligned.split.splitSAH())
       new (&split) GeneralSplit(object_binning_aligned.split,true);
     //else if (bestSAH == spatial_binning_aligned.split.splitSAH()) 
@@ -670,8 +673,15 @@ namespace embree
       new (&split) GeneralSplit(object_binning_unaligned.split,false);
     //else if (bestSAH == spatial_binning_unaligned.split.splitSAH())
     //new (&split) GeneralSplit(spatial_binning_unaligned.split,false);
+    else if (bestSAH == object_type.split.splitSAH()) {
+      //PRINT(object_type.split.splitSAH());
+      //PRINT(object_binning_aligned.split.splitSAH());
+      //PRINT(object_binning_unaligned.split.splitSAH());
+      new (&split) GeneralSplit(object_type.split);
+    }
     else
-      new (&split) GeneralSplit(object_binning_aligned.pinfo.size());
+      throw std::runtime_error("internal error");
+//      new (&split) GeneralSplit(object_binning_aligned.pinfo.size());
     
 #endif
   }
@@ -790,7 +800,8 @@ namespace embree
   typename BVH4Builder2::NodeRef BVH4Builder2::recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const GeneralSplit& split)
   {
     //PRINT(depth);
-
+    //PRINT(split.size());
+    
     /*! compute leaf and split cost */
     const float leafSAH  = /*primTy.intCost*/split.leafSAH ();
     const float splitSAH = /*primTy.intCost*/split.splitSAH() + BVH4::travCost*split.halfAreaGeomBounds;
