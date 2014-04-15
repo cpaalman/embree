@@ -33,36 +33,40 @@ namespace embree
   Scene* g_scene = NULL; // FIXME: remove me
   BVH4Builder2* g_builder2 = NULL;
 
-  BBox3fa primBounds(const LinearSpace3fa& space, const PrimRef& prim)
+  BBox3fa primSpaceBounds(const LinearSpace3fa& space, const PrimRef& prim)
   {
-    /*TriangleMesh* mesh = (TriangleMesh*) g_scene->get(prim.geomID());
+    TriangleMesh* mesh = (TriangleMesh*) g_scene->get(prim.geomID());
     TriangleMesh::Triangle tri = mesh->triangle(prim.primID());
     BBox3fa bounds = empty;
     bounds.extend(xfmPoint(space,mesh->vertex(tri.v[0])));
     bounds.extend(xfmPoint(space,mesh->vertex(tri.v[1])));
     bounds.extend(xfmPoint(space,mesh->vertex(tri.v[2])));
-    return bounds;*/
-    return prim.bounds();
+    return bounds;
   }
 
-  BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(const LinearSpace3fa& space, TriRefList& triangles) 
-    : space(space)
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+
+  BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(TriRefList& triangles) 
   {
     add(triangles);
     setup_binning();
     bin(triangles);
-    best(split);
+    best();
   }
 
-  BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(const LinearSpace3fa& space, TriRefList& triangles, BezierRefList& beziers) 
-    : space(space)
+  BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(TriRefList& triangles, BezierRefList& beziers) 
   {
     add(triangles);
     add(beziers);
     setup_binning();
     bin(triangles);
     bin(beziers);
-    best(split);
+    best();
   }
 
   void BVH4Builder2::ObjectSplitBinner::add(TriRefList& prims)
@@ -110,8 +114,7 @@ namespace embree
     BBox3fa centBounds = empty;
     for (size_t i=0; i<num; i++)
     {
-      //const BBox3fa bounds = prims[i].bounds(space); 
-      const BBox3fa bounds = primBounds(space,prims[i]); 
+      const BBox3fa bounds = prims[i].bounds(); 
       geomBounds.extend(bounds);
       centBounds.extend(center2(bounds));
     }
@@ -127,7 +130,7 @@ namespace embree
     BBox3fa centBounds = empty;
     for (size_t i=0; i<num; i++)
     {
-      const BBox3fa bounds = prims[i].bounds(space); 
+      const BBox3fa bounds = prims[i].bounds(); 
       geomBounds.extend(bounds);
       centBounds.extend(center2(bounds));
     }
@@ -144,10 +147,8 @@ namespace embree
     size_t i; for (i=0; i<num-1; i+=2)
     {
       /*! map even and odd primitive to bin */
-      //const BBox3fa prim0 = prims[i+0].bounds(space); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
-      //const BBox3fa prim1 = prims[i+1].bounds(space); const Vec3ia bin1 = mapping.bin(prim1); const Vec3fa center1 = Vec3fa(center2(prim1));
-      const BBox3fa prim0 = primBounds(space,prims[i+0]); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
-      const BBox3fa prim1 = primBounds(space,prims[i+1]); const Vec3ia bin1 = mapping.bin(prim1); const Vec3fa center1 = Vec3fa(center2(prim1));
+      const BBox3fa prim0 = prims[i+0].bounds(); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
+      const BBox3fa prim1 = prims[i+1].bounds(); const Vec3ia bin1 = mapping.bin(prim1); const Vec3fa center1 = Vec3fa(center2(prim1));
       
       /*! increase bounds for bins for even primitive */
       const int b00 = bin0.x; triCounts[b00][0]++; geomBounds[b00][0].extend(prim0); 
@@ -164,8 +165,7 @@ namespace embree
     if (i < num)
     {
       /*! map primitive to bin */
-      //const BBox3fa prim0 = prims[i].bounds(space); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
-      const BBox3fa prim0 = primBounds(space,prims[i]); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
+      const BBox3fa prim0 = prims[i].bounds(); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
       
       /*! increase bounds of bins */
       const int b00 = bin0.x; triCounts[b00][0]++; geomBounds[b00][0].extend(prim0); 
@@ -179,7 +179,7 @@ namespace embree
     for (size_t i=0; i<num; i++)
     {
       /*! map even and odd primitive to bin */
-      const BBox3fa prim0 = prims[i+0].bounds(space); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
+      const BBox3fa prim0 = prims[i+0].bounds(); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
       
       /*! increase bounds for bins for even primitive */
       const int b00 = bin0.x; bezierCounts[b00][0]++; geomBounds[b00][0].extend(prim0); 
@@ -188,10 +188,8 @@ namespace embree
     }
   }
   
-  void BVH4Builder2::ObjectSplitBinner::best(Split& split)
+  void BVH4Builder2::ObjectSplitBinner::best()
   {
-    //PRINT("objectsplit");
-
     Vec3fa rAreas [maxBins];      //!< area of bounds of primitives on the right
     Vec3ia rCounts[maxBins];      //!< blocks of primitives on the right
     
@@ -224,8 +222,6 @@ namespace embree
       const Vec3fa lArea = Vec3fa(Ax,Ay,Az);
       const Vec3fa rArea = rAreas[i];
       const Vec3fa sah = lArea*Vec3fa(lCount) + rArea*Vec3fa(rCount);
-      //PRINT(sah);
-      //PRINT4(lArea,lCount,rArea,rCount);
       bestPos = select(lt_mask(sah,bestSAH),ii ,bestPos);
       bestSAH = select(lt_mask(sah,bestSAH),sah,bestSAH);
     }
@@ -244,13 +240,11 @@ namespace embree
     }
 
     split.mapping = mapping;
-    //split.pinfo = pinfo;
-    split.space = space;
   }
 
   void BVH4Builder2::ObjectSplitBinner::Split::split(size_t thread, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims)
   {
-    if (cost == float(inf)) {
+    if (cost == float(inf)) { // FIXME: remove, add assertion
       g_builder2->split_fallback(thread,alloc,prims,lprims,rprims);
       return;
     }
@@ -264,7 +258,7 @@ namespace embree
       {
         const PrimRef& prim = block->at(i); 
                 
-        if (mapping.bin_unsafe(primBounds(space,prim))[dim] < pos) 
+        if (mapping.bin_unsafe(prim.bounds())[dim] < pos) 
         {
           if (likely(lblock->insert(prim))) continue; 
           lblock = lprims.insert(alloc->malloc(thread));
@@ -283,7 +277,274 @@ namespace embree
 
   void BVH4Builder2::ObjectSplitBinner::Split::split(size_t thread, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims)
   {
-    if (cost == float(inf)) {
+    if (cost == float(inf)) { // FIXME: remove, add assertion
+      g_builder2->split_fallback(thread,alloc,prims,lprims,rprims);
+      return;
+    }
+
+    BezierRefList::item* lblock = lprims.insert(alloc->malloc(thread));
+    BezierRefList::item* rblock = rprims.insert(alloc->malloc(thread));
+    
+    while (BezierRefList::item* block = prims.take()) 
+    {
+      for (size_t i=0; i<block->size(); i++) 
+      {
+        const Bezier1& prim = block->at(i); 
+                
+        if (mapping.bin_unsafe(prim.bounds())[dim] < pos) 
+        {
+          if (likely(lblock->insert(prim))) continue; 
+          lblock = lprims.insert(alloc->malloc(thread));
+          lblock->insert(prim);
+        } 
+        else 
+        {
+          if (likely(rblock->insert(prim))) continue;
+          rblock = rprims.insert(alloc->malloc(thread));
+          rblock->insert(prim);
+        }
+      }
+      alloc->free(thread,block);
+    }
+  }
+
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+
+  BVH4Builder2::ObjectSplitBinnerUnaligned::ObjectSplitBinnerUnaligned(const LinearSpace3fa& space, TriRefList& triangles) 
+    : space(space)
+  {
+    add(triangles);
+    setup_binning();
+    bin(triangles);
+    best();
+  }
+
+  BVH4Builder2::ObjectSplitBinnerUnaligned::ObjectSplitBinnerUnaligned(const LinearSpace3fa& space, TriRefList& triangles, BezierRefList& beziers) 
+    : space(space)
+  {
+    add(triangles);
+    add(beziers);
+    setup_binning();
+    bin(triangles);
+    bin(beziers);
+    best();
+  }
+
+  void BVH4Builder2::ObjectSplitBinnerUnaligned::add(TriRefList& prims)
+  {
+    TriRefList::iterator i=prims;
+    while (TriRefBlock* block = i.next()) {
+      info(block->base(),block->size());
+    }
+  }
+
+  void BVH4Builder2::ObjectSplitBinnerUnaligned::add(BezierRefList& prims)
+  {
+    BezierRefList::iterator i=prims;
+    while (BezierRefBlock* block = i.next()) {
+      info(block->base(),block->size());
+    }
+  }
+
+  void BVH4Builder2::ObjectSplitBinnerUnaligned::setup_binning()
+  {
+    new (&mapping) Mapping(pinfo);
+    for (size_t i=0; i<mapping.size(); i++) {
+      triCounts[i] = bezierCounts[i] = 0;
+      geomBounds[i][0] = geomBounds[i][1] = geomBounds[i][2] = empty;
+    }
+  }
+
+  void BVH4Builder2::ObjectSplitBinnerUnaligned::bin(TriRefList& prims)
+  {
+    TriRefList::iterator j=prims;
+    while (TriRefBlock* block = j.next())
+      bin(block->base(),block->size());
+  }
+
+  void BVH4Builder2::ObjectSplitBinnerUnaligned::bin(BezierRefList& prims)
+  {
+    BezierRefList::iterator j=prims;
+    while (BezierRefBlock* block = j.next())
+      bin(block->base(),block->size());
+  }
+
+  void BVH4Builder2::ObjectSplitBinnerUnaligned::info(const PrimRef* prims, size_t num)
+  {
+    BBox3fa geomBounds = empty;
+    BBox3fa centBounds = empty;
+    for (size_t i=0; i<num; i++)
+    {
+      const BBox3fa bounds = primSpaceBounds(space,prims[i]); 
+      geomBounds.extend(bounds);
+      centBounds.extend(center2(bounds));
+    }
+    pinfo.num += num;
+    pinfo.numTriangles += num;
+    pinfo.geomBounds.extend(geomBounds);
+    pinfo.centBounds.extend(centBounds);
+  }
+
+  void BVH4Builder2::ObjectSplitBinnerUnaligned::info(const Bezier1* prims, size_t num)
+  {
+    BBox3fa geomBounds = empty;
+    BBox3fa centBounds = empty;
+    for (size_t i=0; i<num; i++)
+    {
+      const BBox3fa bounds = prims[i].bounds(space); 
+      geomBounds.extend(bounds);
+      centBounds.extend(center2(bounds));
+    }
+    pinfo.num += num;
+    pinfo.numBeziers += num;
+    pinfo.geomBounds.extend(geomBounds);
+    pinfo.centBounds.extend(centBounds);
+  }
+
+  void BVH4Builder2::ObjectSplitBinnerUnaligned::bin(const PrimRef* prims, size_t num)
+  {
+    if (num == 0) return;
+    
+    size_t i; for (i=0; i<num-1; i+=2)
+    {
+      /*! map even and odd primitive to bin */
+      const BBox3fa prim0 = primSpaceBounds(space,prims[i+0]); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
+      const BBox3fa prim1 = primSpaceBounds(space,prims[i+1]); const Vec3ia bin1 = mapping.bin(prim1); const Vec3fa center1 = Vec3fa(center2(prim1));
+      
+      /*! increase bounds for bins for even primitive */
+      const int b00 = bin0.x; triCounts[b00][0]++; geomBounds[b00][0].extend(prim0); 
+      const int b01 = bin0.y; triCounts[b01][1]++; geomBounds[b01][1].extend(prim0); 
+      const int b02 = bin0.z; triCounts[b02][2]++; geomBounds[b02][2].extend(prim0); 
+      
+      /*! increase bounds of bins for odd primitive */
+      const int b10 = bin1.x; triCounts[b10][0]++; geomBounds[b10][0].extend(prim1); 
+      const int b11 = bin1.y; triCounts[b11][1]++; geomBounds[b11][1].extend(prim1); 
+      const int b12 = bin1.z; triCounts[b12][2]++; geomBounds[b12][2].extend(prim1); 
+    }
+    
+    /*! for uneven number of primitives */
+    if (i < num)
+    {
+      /*! map primitive to bin */
+      const BBox3fa prim0 = primSpaceBounds(space,prims[i]); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
+      
+      /*! increase bounds of bins */
+      const int b00 = bin0.x; triCounts[b00][0]++; geomBounds[b00][0].extend(prim0); 
+      const int b01 = bin0.y; triCounts[b01][1]++; geomBounds[b01][1].extend(prim0); 
+      const int b02 = bin0.z; triCounts[b02][2]++; geomBounds[b02][2].extend(prim0); 
+    }
+  }
+
+  void BVH4Builder2::ObjectSplitBinnerUnaligned::bin(const Bezier1* prims, size_t num)
+  {
+    for (size_t i=0; i<num; i++)
+    {
+      /*! map even and odd primitive to bin */
+      const BBox3fa prim0 = prims[i+0].bounds(space); const Vec3ia bin0 = mapping.bin(prim0); const Vec3fa center0 = Vec3fa(center2(prim0));
+      
+      /*! increase bounds for bins for even primitive */
+      const int b00 = bin0.x; bezierCounts[b00][0]++; geomBounds[b00][0].extend(prim0); 
+      const int b01 = bin0.y; bezierCounts[b01][1]++; geomBounds[b01][1].extend(prim0); 
+      const int b02 = bin0.z; bezierCounts[b02][2]++; geomBounds[b02][2].extend(prim0); 
+    }
+  }
+  
+  void BVH4Builder2::ObjectSplitBinnerUnaligned::best()
+  {
+    Vec3fa rAreas [maxBins];      //!< area of bounds of primitives on the right
+    Vec3ia rCounts[maxBins];      //!< blocks of primitives on the right
+    
+    /* sweep from right to left and compute parallel prefix of merged bounds */
+    assert(mapping.size() > 0);
+    Vec3ia triCount = 0, bezierCount = 0; 
+    BBox3fa bx = empty; BBox3fa by = empty; BBox3fa bz = empty;
+    for (size_t i=mapping.size()-1; i>0; i--)
+    {
+      triCount += triCounts[i];
+      bezierCount += bezierCounts[i];
+      rCounts[i] = blocks(triCount) + bezierCount;
+      bx = merge(bx,geomBounds[i][0]); rAreas[i][0] = halfArea(bx);
+      by = merge(by,geomBounds[i][1]); rAreas[i][1] = halfArea(by);
+      bz = merge(bz,geomBounds[i][2]); rAreas[i][2] = halfArea(bz);
+    }
+    
+    /* sweep from left to right and compute SAH */
+    Vec3ia ii = 1; Vec3fa bestSAH = pos_inf; Vec3ia bestPos = 0;
+    triCount = 0; bezierCount = 0; bx = empty; by = empty; bz = empty;
+    for (size_t i=1; i<mapping.size(); i++, ii+=1)
+    {
+      triCount += triCounts[i-1];
+      bezierCount += bezierCounts[i-1];
+      bx = merge(bx,geomBounds[i-1][0]); float Ax = halfArea(bx);
+      by = merge(by,geomBounds[i-1][1]); float Ay = halfArea(by);
+      bz = merge(bz,geomBounds[i-1][2]); float Az = halfArea(bz);
+      const Vec3ia lCount = blocks(triCount) + bezierCount;
+      const Vec3ia rCount = rCounts[i];
+      const Vec3fa lArea = Vec3fa(Ax,Ay,Az);
+      const Vec3fa rArea = rAreas[i];
+      const Vec3fa sah = lArea*Vec3fa(lCount) + rArea*Vec3fa(rCount);
+      bestPos = select(lt_mask(sah,bestSAH),ii ,bestPos);
+      bestSAH = select(lt_mask(sah,bestSAH),sah,bestSAH);
+    }
+
+    /* find best dimension */
+    for (int i=0; i<3; i++) 
+    {
+      if (unlikely(pinfo.centBounds.lower[i] >= pinfo.centBounds.upper[i])) 
+        continue;
+      
+      if (bestSAH[i] < split.cost && bestPos[i] != 0) {
+        split.dim = i;
+        split.pos = bestPos[i];
+        split.cost = bestSAH[i];
+      }
+    }
+
+    split.mapping = mapping;
+    split.space = space;
+  }
+
+  void BVH4Builder2::ObjectSplitBinnerUnaligned::Split::split(size_t thread, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims)
+  {
+    if (cost == float(inf)) { // FIXME: remove
+      g_builder2->split_fallback(thread,alloc,prims,lprims,rprims);
+      return;
+    }
+
+    TriRefList::item* lblock = lprims.insert(alloc->malloc(thread));
+    TriRefList::item* rblock = rprims.insert(alloc->malloc(thread));
+    
+    while (TriRefList::item* block = prims.take()) 
+    {
+      for (size_t i=0; i<block->size(); i++) 
+      {
+        const PrimRef& prim = block->at(i); 
+                
+        if (mapping.bin_unsafe(primSpaceBounds(space,prim))[dim] < pos) 
+        {
+          if (likely(lblock->insert(prim))) continue; 
+          lblock = lprims.insert(alloc->malloc(thread));
+          lblock->insert(prim);
+        } 
+        else 
+        {
+          if (likely(rblock->insert(prim))) continue;
+          rblock = rprims.insert(alloc->malloc(thread));
+          rblock->insert(prim);
+        }
+      }
+      alloc->free(thread,block);
+    }
+  }
+
+  void BVH4Builder2::ObjectSplitBinnerUnaligned::Split::split(size_t thread, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims)
+  {
+    if (cost == float(inf)) { // FIXME: remove
       g_builder2->split_fallback(thread,alloc,prims,lprims,rprims);
       return;
     }
@@ -321,17 +582,14 @@ namespace embree
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
 
-  BVH4Builder2::SpatialSplit::SpatialSplit(/*const LinearSpace3fa& space,*/ TriRefList& tris, BezierRefList& beziers)
-  //: space(space)
+  BVH4Builder2::SpatialSplit::SpatialSplit(TriRefList& tris, BezierRefList& beziers)
   {
     /* calculate geometry bounds */
     geomBounds = empty;
     for (TriRefList::block_iterator_unsafe i=tris; i; i++)
       geomBounds.extend(i->bounds());
-      //geomBounds.extend(primBounds(space,*i));
 
     for (BezierRefList::block_iterator_unsafe i=beziers; i; i++)
-      //geomBounds.extend(i->bounds(space));
       geomBounds.extend(i->bounds());
 
     /* calculate binning function */
@@ -342,7 +600,6 @@ namespace embree
     /* initialize bins */
     for (size_t i=0; i<BINS; i++) {
       bounds[i][0] = bounds[i][1] = bounds[i][2] = bounds[i][3] = empty;
-      //areas [i][0] = areas [i][1] = areas [i][2] = areas [i][3] = 0.0f;
       numTriBegin[i] = numTriEnd[i] = 0;
       numBezierBegin[i] = numBezierEnd[i] = 0;
     }
@@ -359,23 +616,14 @@ namespace embree
       PrimRef prim = *i;
       TriangleMesh* mesh = (TriangleMesh*) g_scene->get(i->geomID());
       TriangleMesh::Triangle tri = mesh->triangle(i->primID());
-      BBox3fa primBounds = prim.bounds();
-      /*BBox3fa primBounds = empty;
-      const Vec3fa v0 = xfmPoint(space,mesh->vertex(tri.v[0])); primBounds.extend(v0);
-      const Vec3fa v1 = xfmPoint(space,mesh->vertex(tri.v[1])); primBounds.extend(v1);
-      const Vec3fa v2 = xfmPoint(space,mesh->vertex(tri.v[2])); primBounds.extend(v2);*/
+
+      const BBox3fa primBounds = prim.bounds();
+      const ssei startbin = clamp(floori((ssef(primBounds.lower)-ofs)*scale),ssei(0),ssei(BINS-1));
+      const ssei endbin   = clamp(floori((ssef(primBounds.upper)-ofs)*scale),ssei(0),ssei(BINS-1));
 
       const Vec3fa v0 = mesh->vertex(tri.v[0]);
       const Vec3fa v1 = mesh->vertex(tri.v[1]);
       const Vec3fa v2 = mesh->vertex(tri.v[2]);
-
-      //const ssei bin0 = clamp(floori((ssef(v0)-ofs)*scale),ssei(0),ssei(BINS-1));
-      //const ssei bin1 = clamp(floori((ssef(v1)-ofs)*scale),ssei(0),ssei(BINS-1));
-      //const ssei bin2 = clamp(floori((ssef(v2)-ofs)*scale),ssei(0),ssei(BINS-1));
-      //const ssei startbin = min(bin0,bin1,bin2);
-      //const ssei endbin   = max(bin0,bin1,bin2);
-      const ssei startbin = clamp(floori((ssef(primBounds.lower)-ofs)*scale),ssei(0),ssei(BINS-1));
-      const ssei endbin   = clamp(floori((ssef(primBounds.upper)-ofs)*scale),ssei(0),ssei(BINS-1));
 
       for (size_t dim=0; dim<3; dim++) 
       {
@@ -389,24 +637,21 @@ namespace embree
           splitTriangle(prim,dim,pos,v0,v1,v2,left,right);
 
           bounds[bin][dim].extend(left.bounds());
-          //areas [bin][dim] += halfArea(left.bounds()); // FIXME: not correct
           rest = right;
         }
         numTriBegin[startbin[dim]][dim]++;
         numTriEnd  [endbin  [dim]][dim]++;
         bounds[bin][dim].extend(rest.bounds());
-        //areas [bin][dim] += halfArea(rest.bounds());  // FIXME: not correct
       }
     }
   }
 
   void BVH4Builder2::SpatialSplit::bin(BezierRefList& beziers)
   {
-#if 0
     for (BezierRefList::block_iterator_unsafe i=beziers; i; i++)
     {
-      const Vec3fa v0 = xfmPoint(space,i->p0);
-      const Vec3fa v1 = xfmPoint(space,i->p3);
+      const Vec3fa v0 = i->p0;
+      const Vec3fa v1 = i->p3;
       const ssei bin0 = clamp(floori((ssef(v0)-ofs)*scale),ssei(0),ssei(BINS-1));
       const ssei bin1 = clamp(floori((ssef(v1)-ofs)*scale),ssei(0),ssei(BINS-1));
       const ssei startbin = min(bin0,bin1);
@@ -419,34 +664,30 @@ namespace embree
         for (bin=startbin[dim]; bin<endbin[dim]; bin++) // FIXME: one can prevent many transformations in this loop here !!!
         {
           const float pos = float(bin+1)/scale[dim]+ofs[dim];
-          const Vec3fa plane(space.vx[dim],space.vy[dim],space.vz[dim],-pos);
+          //const Vec3fa plane(space.vx[dim],space.vy[dim],space.vz[dim],-pos);
+          const Vec3fa plane(dim == 0,dim == 1,dim == 2,-pos); // FIXME: optimize
           Bezier1 bincurve,restcurve; 
           if (curve.split(plane,bincurve,restcurve)) {
-            const BBox3fa cbounds = bincurve.bounds(space);
+            const BBox3fa cbounds = bincurve.bounds();
             bounds[bin][dim].extend(cbounds);
-            //areas [bin][dim] += halfArea(cbounds); // FIXME: not correct
             curve = restcurve;
           }
         }
         numBezierBegin[startbin[dim]][dim]++;
         numBezierEnd  [endbin  [dim]][dim]++;
-        const BBox3fa cbounds = curve.bounds(space);
+        const BBox3fa cbounds = curve.bounds();
         bounds[bin][dim].extend(cbounds);
-        //areas [bin][dim] += halfArea(cbounds);  // FIXME: not correct
       }
     }
-#endif
   }
 
     void BVH4Builder2::SpatialSplit::best()
     {
-      //PRINT("spatial");
-
       /* sweep from right to left and compute parallel prefix of merged bounds */
-    ssef rAreas[BINS];
-    ssei rCounts[BINS];
-    ssei triCount = 0, bezierCount = 0; BBox3fa bx = empty; BBox3fa by = empty; BBox3fa bz = empty;
-    for (size_t i=BINS-1; i>0; i--)
+      ssef rAreas[BINS];
+      ssei rCounts[BINS];
+      ssei triCount = 0, bezierCount = 0; BBox3fa bx = empty; BBox3fa by = empty; BBox3fa bz = empty;
+      for (size_t i=BINS-1; i>0; i--)
     {
       triCount += numTriEnd[i];
       bezierCount += numBezierEnd[i];
@@ -457,7 +698,7 @@ namespace embree
     }
     
     /* sweep from left to right and compute SAH */
-    ssei ii = 1; ssef bestSAH = pos_inf; ssei bestPos = 0; //ssei bestLeft = 0; ssei bestRight = 0;
+    ssei ii = 1; ssef bestSAH = pos_inf; ssei bestPos = 0;
     triCount = 0; bezierCount = 0; bx = empty; by = empty; bz = empty;
     for (size_t i=1; i<BINS; i++, ii+=1)
     {
@@ -471,14 +712,11 @@ namespace embree
       const ssei lCount = blocks(triCount) + bezierCount;
       const ssei rCount = rCounts[i];
       const ssef sah = lArea*ssef(lCount) + rArea*ssef(rCount);
-      //PRINT(sah);
-      //PRINT4(lArea,lCount,rArea,rCount);
       bestPos  = select(sah < bestSAH,ii ,bestPos);
       bestSAH  = select(sah < bestSAH,sah,bestSAH);
     }
     
     /* find best dimension */
-    //split.space = space;
     split.ofs = ofs;
     split.scale = scale;
     split.cost = inf;
@@ -524,16 +762,7 @@ namespace embree
       for (size_t i=0; i<block->size(); i++) 
       {
         const PrimRef& prim = block->at(i); 
-        TriangleMesh* mesh = (TriangleMesh*) g_scene->get(prim.geomID());
-        TriangleMesh::Triangle tri = mesh->triangle(prim.primID());
-        /*BBox3fa bounds = empty;
-        const Vec3fa v0 = xfmPoint(space,mesh->vertex(tri.v[0])); bounds.extend(v0);
-        const Vec3fa v1 = xfmPoint(space,mesh->vertex(tri.v[1])); bounds.extend(v1);
-        const Vec3fa v2 = xfmPoint(space,mesh->vertex(tri.v[2])); bounds.extend(v2);*/
         const BBox3fa bounds = prim.bounds();
-        const Vec3fa v0 = mesh->vertex(tri.v[0]);
-        const Vec3fa v1 = mesh->vertex(tri.v[1]);
-        const Vec3fa v2 = mesh->vertex(tri.v[2]);
 
         /* sort to the left side */
         if (bounds.lower[dim] <= pos && bounds.upper[dim] <= pos)
@@ -554,6 +783,12 @@ namespace embree
         }
 
         /* split and sort to left and right */
+        TriangleMesh* mesh = (TriangleMesh*) g_scene->get(prim.geomID());
+        TriangleMesh::Triangle tri = mesh->triangle(prim.primID());
+        const Vec3fa v0 = mesh->vertex(tri.v[0]);
+        const Vec3fa v1 = mesh->vertex(tri.v[1]);
+        const Vec3fa v2 = mesh->vertex(tri.v[2]);
+
         PrimRef left,right;
         splitTriangle(prim,dim,pos,v0,v1,v2,left,right);
 
@@ -573,9 +808,9 @@ namespace embree
 
   void BVH4Builder2::SpatialSplit::Split::split(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims_o, BezierRefList& rprims_o) const
   {
-#if 0
     /* calculate splitting plane */
-    const Vec3fa plane(space.vx[dim],space.vy[dim],space.vz[dim],-pos);
+    //const Vec3fa plane(space.vx[dim],space.vy[dim],space.vz[dim],-pos);
+    const Vec3fa plane(dim == 0,dim == 1,dim == 2,-pos); // FIXME: optimize
     
     BezierRefList::item* lblock = lprims_o.insert(alloc->malloc(threadIndex));
     BezierRefList::item* rblock = rprims_o.insert(alloc->malloc(threadIndex));
@@ -586,8 +821,8 @@ namespace embree
       for (size_t i=0; i<block->size(); i++) 
       {
         const Bezier1& prim = block->at(i); 
-        const float p0p = dot(prim.p0,plane)+plane.w;
-        const float p3p = dot(prim.p3,plane)+plane.w;
+        const float p0p = prim.p0[dim]-pos; //dot(prim.p0,plane)+plane.w;
+        const float p3p = prim.p3[dim]-pos; //dot(prim.p3,plane)+plane.w;
 
         /* sort to the left side */
         if (p0p <= 0.0f && p3p <= 0.0f)
@@ -630,7 +865,6 @@ namespace embree
       }
       alloc->free(threadIndex,block);
     }
-#endif
   }
 
   ///////////////////////////////////////////////////////////////////////////////
@@ -700,7 +934,7 @@ namespace embree
   }
 
   BVH4Builder2::BVH4Builder2 (BVH4* bvh, BuildSource* source, void* geometry, const size_t minLeafSize, const size_t maxLeafSize)
-    : source(source), geometry(geometry), /*primTy(*bvh->primTy[0]),*/ minLeafSize(minLeafSize), maxLeafSize(maxLeafSize), bvh(bvh)
+    : source(source), geometry(geometry), minLeafSize(minLeafSize), maxLeafSize(maxLeafSize), bvh(bvh)
   {
     size_t maxLeafTris    = BVH4::maxLeafBlocks*bvh->primTy[0]->blockSize;
     size_t maxLeafBeziers = BVH4::maxLeafBlocks*bvh->primTy[1]->blockSize;
@@ -825,7 +1059,7 @@ namespace embree
   {
     BBox3fa bounds = empty;
     for (TriRefList::block_iterator_unsafe i=tris; i; i++)
-      bounds.extend(primBounds(space,*i));
+      bounds.extend(primSpaceBounds(space,*i));
     return NAABBox3fa(space,bounds);
   }
 
@@ -910,7 +1144,7 @@ namespace embree
     }
     size_t numPrimitives = numBeziers + numTriangles;
 
-    remainingSpatialSplits = 5.0f*numPrimitives; // FIXME: hardcoded constant
+    remainingSpatialSplits = 1.0f*numPrimitives; // FIXME: hardcoded constant
     bvh->init(numPrimitives+remainingSpatialSplits);
     if (numPrimitives == 0) return;
 
@@ -1019,18 +1253,15 @@ namespace embree
 
   void BVH4Builder2::heuristic(TriRefList& tris, BezierRefList& beziers, GeneralSplit& split)
   {
-//    PING;
-
     float bestSAH = inf;
 
     ObjectTypePartitioning object_type(tris,beziers);
     bestSAH = min(bestSAH,object_type.split.splitSAH());
-    //PRINT(object_type.split.splitSAH());
 
-    ObjectSplitBinner object_binning_aligned(one,tris,beziers);
+    ObjectSplitBinner object_binning_aligned(tris,beziers);
     bestSAH = min(bestSAH,object_binning_aligned.split.splitSAH());
-    //PRINT(object_binning_aligned.split.splitSAH());
 
+    //bool enableSpatialSplits = false;
     bool enableSpatialSplits = remainingSpatialSplits > 0;
     SpatialSplit spatial_binning_aligned(tris,beziers);
     if (enableSpatialSplits) 
@@ -1060,7 +1291,6 @@ namespace embree
     }
     else
       throw std::runtime_error("internal error");
-//      new (&split) GeneralSplit(object_binning_aligned.pinfo.size());
   }
 
   BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, TriRefList& prims, const PrimInfo& pinfo)
@@ -1183,9 +1413,6 @@ namespace embree
     const float splitSAH = /*primTy.intCost*/split.splitSAH() + BVH4::travCost*halfArea(pinfo.geomBounds);
     //assert(split.size() == 0 || leafSAH >= 0 && splitSAH >= 0);
 
-    //if (depth > 30) PRINT(leafSAH);
-    //if (depth > 30) PRINT(splitSAH);
-    
     /*! create a leaf node when threshold reached or SAH tells us to stop */
     if (pinfo.size() <= builder->minLeafSize || depth > BVH4::maxBuildDepth || (pinfo.size() <= builder->maxLeafSize && leafSAH <= splitSAH)) {
       *dst = builder->leaf(threadIndex,depth,tris,beziers,pinfo); N = 0; return;
@@ -1280,7 +1507,6 @@ namespace embree
       pop_heap(tasks.begin(),tasks.end());
       tasks.pop_back();
       taskMutex.unlock();
-      //PRINT2(task.depth,task.pinfo.size());
 
       /* recursively finish task */
       if (task.pinfo.size() < 512) {

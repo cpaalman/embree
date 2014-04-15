@@ -43,112 +43,11 @@ namespace embree
     typedef typename BVH4::Node    Node;
     typedef typename BVH4::NodeRef NodeRef;
 
-    /*! Block of build primitives */
-    template<typename PrimRef>
-    class PrimRefBlock
-    {
-    public:
-
-      typedef PrimRef T;
-
-      /*! Number of primitive references inside a block */
-      static const size_t blockSize = 511;
-
-      /*! default constructor */
-      PrimRefBlock () : num(0) {}
-
-      /*! frees the block */
-      __forceinline void clear(size_t n = 0) { num = n; }
-      
-      /*! return base pointer */
-      __forceinline PrimRef* base() { return ptr; }
-
-      /*! returns number of elements */
-      __forceinline size_t size() const { return num; }
-
-      /*! inserts a primitive reference */
-      __forceinline bool insert(const PrimRef& ref) {
-        if (unlikely(num >= blockSize)) return false;
-        ptr[num++] = ref;
-        return true;
-      }
-
-      /*! access the i-th primitive reference */
-      __forceinline       PrimRef& operator[] (size_t i)       { return ptr[i]; }
-      __forceinline const PrimRef& operator[] (size_t i) const { return ptr[i]; }
-    
-      /*! access the i-th primitive reference */
-      __forceinline       PrimRef& at (size_t i)       { return ptr[i]; }
-      __forceinline const PrimRef& at (size_t i) const { return ptr[i]; }
-    
-    private:
-      PrimRef ptr[blockSize];   //!< Block with primitive references
-      size_t num;               //!< Number of primitive references in block
-    };
-
-    typedef PrimRefBlock<PrimRef> TriRefBlock;
+    typedef PrimRefBlockT<PrimRef> TriRefBlock;
     typedef atomic_set<TriRefBlock> TriRefList;
 
-    typedef PrimRefBlock<Bezier1> BezierRefBlock;
+    typedef PrimRefBlockT<Bezier1> BezierRefBlock;
     typedef atomic_set<BezierRefBlock> BezierRefList;
-
-    template<typename PrimRef>
-      class PrimRefBlockAlloc : public AllocatorBase
-    {
-      ALIGNED_CLASS;
-    public:
-   
-      struct __aligned(4096) ThreadPrimBlockAllocator 
-      {
-        ALIGNED_CLASS_(4096);
-      public:
-      
-        __forceinline typename atomic_set<PrimRefBlock<PrimRef> >::item* malloc(size_t thread, AllocatorBase* alloc) 
-        {
-          /* try to take a block from local list */
-          atomic_set<PrimRefBlock<PrimRef> >::item* ptr = local_free_blocks.take_unsafe();
-          if (ptr) return new (ptr) typename atomic_set<PrimRefBlock<PrimRef> >::item();
-          
-          /* if this failed again we have to allocate more memory */
-          ptr = (typename atomic_set<PrimRefBlock<PrimRef> >::item*) alloc->malloc(sizeof(typename atomic_set<PrimRefBlock<PrimRef> >::item));
-          
-          /* return first block */
-          return new (ptr) typename atomic_set<PrimRefBlock<PrimRef> >::item();
-        }
-      
-        __forceinline void free(typename atomic_set<PrimRefBlock<PrimRef> >::item* ptr) {
-          local_free_blocks.insert_unsafe(ptr);
-        }
-        
-      public:
-        atomic_set<PrimRefBlock<PrimRef> > local_free_blocks; //!< only accessed from one thread
-      };
-      
-    public:
-      
-      /*! Allocator default construction. */
-      PrimRefBlockAlloc () {
-        threadPrimBlockAllocator = new ThreadPrimBlockAllocator[getNumberOfLogicalThreads()];
-      }
-      
-      /*! Allocator destructor. */
-      virtual ~PrimRefBlockAlloc() {
-        delete[] threadPrimBlockAllocator; threadPrimBlockAllocator = NULL;
-      }
-      
-      /*! Allocate a primitive block */
-      __forceinline typename atomic_set<PrimRefBlock<PrimRef> >::item* malloc(size_t thread) {
-        return threadPrimBlockAllocator[thread].malloc(thread,this);
-      }
-      
-      /*! Frees a primitive block */
-      __forceinline void free(size_t thread, typename atomic_set<PrimRefBlock<PrimRef> >::item* block) {
-        return threadPrimBlockAllocator[thread].free(block);
-      }
-      
-    private:
-      ThreadPrimBlockAllocator* threadPrimBlockAllocator;  //!< Thread local allocator
-    };
 
     /*! stores bounding information for a set of primitives */
     class PrimInfo
@@ -165,7 +64,9 @@ namespace embree
         return num; 
       }
 
-      __forceinline float leafSAH() const { return halfArea(geomBounds)*(blocks(numTriangles) + numBeziers); }
+      __forceinline float leafSAH() const { 
+        return halfArea(geomBounds)*(blocks(numTriangles) + numBeziers); 
+      }
 
     public:
       size_t num;          //!< number of primitives
@@ -222,7 +123,7 @@ namespace embree
     public:
       
       /*! create an invalid split by default */
-      __forceinline Split () : dim(0), pos(0), cost(inf), aligned(true) {}
+      __forceinline Split () : dim(0), pos(0), cost(inf) {}
       
       /*! return SAH cost of performing the split */
       __forceinline float splitSAH() const { return cost; } 
@@ -237,12 +138,11 @@ namespace embree
       int pos;            //!< Best object split position
       float cost;         //!< SAH cost of performing best object split
       LinearSpace3fa space;
-      bool aligned;
     };
     
     /*! default constructor */
-    ObjectSplitBinner (const LinearSpace3fa& space, TriRefList& prims);
-    ObjectSplitBinner (const LinearSpace3fa& space, TriRefList& prims, BezierRefList& beziers);
+    ObjectSplitBinner (TriRefList& prims);
+    ObjectSplitBinner (TriRefList& prims, BezierRefList& beziers);
   
   private:
 
@@ -256,7 +156,79 @@ namespace embree
     void bin(BezierRefList& prims);
 
     /*! calculate the best possible split */
-    void best(Split& split_o);
+    void best();
+
+    void info(const PrimRef* prims, size_t num);
+
+    void info(const Bezier1* prims, size_t num);
+
+    /*! bin an array of primitives */
+    void bin(const PrimRef* prim, size_t num);
+
+    /*! bin an array of beziers */
+    void bin(const Bezier1* prim, size_t num);
+      
+  public:
+    PrimInfo pinfo;                //!< bounding information of geometry
+    Mapping mapping;               //!< mapping from geometry to the bins
+    
+    /* initialize binning counter and bounds */
+    Vec3ia  triCounts[maxBins];    
+    Vec3ia  bezierCounts[maxBins];    
+    BBox3fa geomBounds[maxBins][4]; 
+
+    Split split;
+  };
+
+    class ObjectSplitBinnerUnaligned
+  {
+    /*! Maximal number of bins. */
+    static const size_t maxBins = 32;
+
+  public:
+    
+    typedef ObjectSplitBinner::Mapping Mapping;
+
+    /*! Stores information about an object split. */
+    class Split
+    {
+    public:
+      
+      /*! create an invalid split by default */
+      __forceinline Split () : dim(0), pos(0), cost(inf) {}
+      
+      /*! return SAH cost of performing the split */
+      __forceinline float splitSAH() const { return cost; } 
+
+      void split(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims);
+
+      void split(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims);
+
+    public:
+      Mapping mapping;    //!< Mapping to bins
+      int dim;            //!< Best object split dimension
+      int pos;            //!< Best object split position
+      float cost;         //!< SAH cost of performing best object split
+      LinearSpace3fa space;
+    };
+    
+    /*! default constructor */
+    ObjectSplitBinnerUnaligned (const LinearSpace3fa& space, TriRefList& prims);
+    ObjectSplitBinnerUnaligned (const LinearSpace3fa& space, TriRefList& prims, BezierRefList& beziers);
+  
+  private:
+
+    void add(TriRefList& prims);
+    void add(BezierRefList& prims);
+
+    void setup_binning();
+    
+    void bin(TriRefList& prims);
+
+    void bin(BezierRefList& prims);
+
+    /*! calculate the best possible split */
+    void best();
 
     void info(const PrimRef* prims, size_t num);
 
@@ -284,7 +256,7 @@ namespace embree
     struct SpatialSplit
     {
       /*! Maximal number of bins. */
-      static const size_t BINS = 32;
+      static const size_t BINS = 16;
 
     public:
 
