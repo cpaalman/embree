@@ -1486,9 +1486,9 @@ namespace embree
       {
         float dSAH = csplit[i].splitSAH()-cpinfo[i].leafSAH();
         if (cpinfo[i].size() <= builder->minLeafSize) continue; 
-        //if (cpinfo[i].size() > builder->maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
-        //if (dSAH <= bestSAH) { bestChild = i; bestSAH = dSAH; }
-        if (area(cpinfo[i].geomBounds) > bestSAH) { bestChild = i; bestSAH = area(cpinfo[i].geomBounds); }
+        if (cpinfo[i].size() > builder->maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
+        if (dSAH <= bestSAH) { bestChild = i; bestSAH = dSAH; }
+        //if (area(cpinfo[i].geomBounds) > bestSAH) { bestChild = i; bestSAH = area(cpinfo[i].geomBounds); }
       }
       if (bestChild == -1) break;
       
@@ -1526,7 +1526,7 @@ namespace embree
       for (size_t i=0; i<numChildren; i++) {
         const LinearSpace3fa hairspace = computeHairSpace(cbeziers[i]);
         const NAABBox3fa bounds = computeAlignedBounds(ctris[i],cbeziers[i],hairspace);
-        node->set(i,bounds); // FIXME: propagate unaligned bounds
+        node->set(i,bounds);
         new (&task_o[i]) BuildTask(&node->child(i),depth+1,ctris[i],cbeziers[i],cpinfo[i],csplit[i],bounds);
       }
       *dst = builder->bvh->encodeNode(node);
