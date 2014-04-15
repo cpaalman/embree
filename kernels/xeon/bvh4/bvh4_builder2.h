@@ -419,8 +419,8 @@ namespace embree
     {
       __forceinline BuildTask () {}
 
-      __forceinline BuildTask (BVH4::NodeRef* dst, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo, const GeneralSplit& split)
-        : dst(dst), depth(depth), tris(tris), beziers(beziers), pinfo(pinfo), split(split) {}
+      __forceinline BuildTask (BVH4::NodeRef* dst, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo, const GeneralSplit& split, const NAABBox3fa& bounds)
+        : dst(dst), depth(depth), tris(tris), beziers(beziers), pinfo(pinfo), split(split), nodeBounds(bounds) {}
 
     public:
       //__forceinline friend bool operator< (const BuildTask& a, const BuildTask& b) {
@@ -444,6 +444,7 @@ namespace embree
       BezierRefList beziers;
       PrimInfo pinfo;
       GeneralSplit split;
+      NAABBox3fa nodeBounds;
     };
 
   public:

@@ -1271,7 +1271,7 @@ namespace embree
     //if (primTy.needVertices) bvh->numVertices = numVertices; // FIXME
     //else                     bvh->numVertices = 0;
 
-    BuildTask task(&bvh->root,1,tris,beziers,pinfo,split);
+    BuildTask task(&bvh->root,1,tris,beziers,pinfo,split,geomBounds);
 
 #if 0
     task.recurse(threadIndex,this);
@@ -1457,8 +1457,10 @@ namespace embree
   {
     //if (depth > 30) PRINT2(depth,pinfo.size());
     /*! compute leaf and split cost */
-    const float leafSAH  = /*primTy.intCost*/pinfo.leafSAH ();
-    const float splitSAH = /*primTy.intCost*/split.splitSAH() + BVH4::travCost*halfArea(pinfo.geomBounds);
+    //const float leafSAH  = /*primTy.intCost*/pinfo.leafSAH ();
+    //const float splitSAH = /*primTy.intCost*/split.splitSAH() + BVH4::travCost*halfArea(pinfo.geomBounds);
+    const float leafSAH  = BVH4::intCost*pinfo.leafSAH ();
+    const float splitSAH = BVH4::intCost*split.splitSAH() + BVH4::travCostAligned*halfArea(nodeBounds.bounds);//pinfo.geomBounds);
     //assert(split.size() == 0 || leafSAH >= 0 && splitSAH >= 0);
 
     /*! create a leaf node when threshold reached or SAH tells us to stop */
@@ -1511,7 +1513,7 @@ namespace embree
       for (size_t i=0; i<numChildren; i++) {
         const BBox3fa bounds = computeAlignedBounds(ctris[i],cbeziers[i]);
         node->set(i,bounds);
-        new (&task_o[i]) BuildTask(&node->child(i),depth+1,ctris[i],cbeziers[i],cpinfo[i],csplit[i]);
+        new (&task_o[i]) BuildTask(&node->child(i),depth+1,ctris[i],cbeziers[i],cpinfo[i],csplit[i],bounds);
       }
       *dst = builder->bvh->encodeNode(node);
       N = numChildren;
@@ -1525,7 +1527,7 @@ namespace embree
         const LinearSpace3fa hairspace = computeHairSpace(cbeziers[i]);
         const NAABBox3fa bounds = computeAlignedBounds(ctris[i],cbeziers[i],hairspace);
         node->set(i,bounds); // FIXME: propagate unaligned bounds
-        new (&task_o[i]) BuildTask(&node->child(i),depth+1,ctris[i],cbeziers[i],cpinfo[i],csplit[i]);
+        new (&task_o[i]) BuildTask(&node->child(i),depth+1,ctris[i],cbeziers[i],cpinfo[i],csplit[i],bounds);
       }
       *dst = builder->bvh->encodeNode(node);
       N = numChildren;
