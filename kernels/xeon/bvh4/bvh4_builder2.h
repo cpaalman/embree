@@ -295,7 +295,7 @@ namespace embree
       public:
         
         /*! create an invalid split by default */
-        __forceinline Split () : dim(0), pos(0), cost(inf) {}
+        __forceinline Split () : dim(0), pos(0), ipos(0), cost(inf), numSpatialSplits(0) {}
         
         /*! return SAH cost of performing the split */
         __forceinline float splitSAH() const { return cost; } 
@@ -307,9 +307,11 @@ namespace embree
       public:
         LinearSpace3fa space;
         float pos;
+        int ipos;
         int dim;
         float cost;
         ssef ofs,scale;
+        size_t numSpatialSplits;
       };
 
       void bin(TriRefList& tris);
@@ -429,6 +431,34 @@ namespace embree
       __aligned(16) char data[256];
     };
   
+    /*! stores all info to build a subtree */
+    struct BuildTask
+    {
+      __forceinline BuildTask () {}
+
+      __forceinline BuildTask (BVH4::NodeRef* dst, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo, const GeneralSplit& split)
+        : dst(dst), depth(depth), tris(tris), beziers(beziers), pinfo(pinfo), split(split) {}
+
+    public:
+      __forceinline friend bool operator< (const BuildTask& a, const BuildTask& b) {
+        return a.pinfo.size() < b.pinfo.size();
+      }
+
+      /*! execute single task and create subtasks */
+      void process(size_t threadIndex, BVH4Builder2* builder, BuildTask task_o[BVH4::N], size_t& N);
+
+      /*! recursive build function for aligned and non-aligned bounds */
+      void recurse(size_t threadIndex, BVH4Builder2* builder);
+      
+    public:
+      BVH4::NodeRef* dst;
+      size_t depth;
+      TriRefList tris;
+      BezierRefList beziers;
+      const PrimInfo pinfo;
+      const GeneralSplit split;
+    };
+
   public:
 
     static const PrimInfo computePrimInfo(TriRefList& tris, BezierRefList& beziers);
@@ -458,7 +488,7 @@ namespace embree
     NodeRef leaf   (size_t threadIndex, size_t depth, TriRefList& prims   , const PrimInfo& pinfo);
     NodeRef leaf   (size_t threadIndex, size_t depth, BezierRefList& prims, const PrimInfo& pinfo);
     NodeRef leaf   (size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo);
-    NodeRef recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo, const GeneralSplit& split);
+    //NodeRef recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo, const GeneralSplit& split);
 
     void heuristic(TriRefList& tris, BezierRefList& beziers, GeneralSplit& split);
 
@@ -466,6 +496,8 @@ namespace embree
     BuildSource* source;      //!< build source interface
     void* geometry;           //!< input geometry
     
+    atomic_t remainingSpatialSplits;
+
   public:
     size_t minLeafSize;                 //!< minimal size of a leaf
     size_t maxLeafSize;                 //!< maximal size of a leaf
