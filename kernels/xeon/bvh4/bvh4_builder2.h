@@ -281,6 +281,58 @@ namespace embree
     Split split;
   };
 
+    struct SpatialSplit
+    {
+      /*! Maximal number of bins. */
+      static const size_t BINS = 32;
+
+    public:
+
+      SpatialSplit (const LinearSpace3fa& space, TriRefList& tris, BezierRefList& beziers);
+
+      class Split
+      {
+      public:
+        
+        /*! create an invalid split by default */
+        __forceinline Split () : dim(0), pos(0), cost(inf) {}
+        
+        /*! return SAH cost of performing the split */
+        __forceinline float splitSAH() const { return cost; } 
+        
+        void split(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims) const;
+        
+        void split(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims) const;
+      
+      public:
+        LinearSpace3fa space;
+        float pos;
+        int dim;
+        float cost;
+        ssef ofs,scale;
+      };
+
+      void bin(TriRefList& tris);
+      void bin(BezierRefList& beziers);
+      void best();
+
+      Split split;
+
+    BBox3fa geomBounds;
+      ssef ofs;
+      ssef diag;
+      ssef scale;
+
+    BBox3fa bounds[BINS][4];
+    float   areas [BINS][4];
+    ssei    numTriBegin[BINS];
+    ssei    numTriEnd[BINS];
+    ssei    numBezierBegin[BINS];
+    ssei    numBezierEnd[BINS];
+
+      const LinearSpace3fa space;
+    };
+
   class ObjectTypePartitioning
   {
   public:
@@ -325,6 +377,15 @@ namespace embree
         new (data) ObjectSplitBinner::Split(split);
       }
 
+      __forceinline GeneralSplit(const SpatialSplit::Split& split, bool aligned_in) {
+        type = SPATIAL_SPLIT; aligned = aligned_in;
+        //leaf_sah = split.leafSAH();
+        split_sah = split.splitSAH();
+        //halfAreaGeomBounds = halfArea(split.pinfo.geomBounds);
+        //num = split.pinfo.size();
+        new (data) SpatialSplit::Split(split);
+      }
+
       __forceinline GeneralSplit(const ObjectTypePartitioning::Split& split) {
         type = TYPE_SPLIT; aligned = true;
         //leaf_sah = split.leafSAH();
@@ -338,7 +399,7 @@ namespace embree
       {
         switch (type) {
         case OBJECT_SPLIT : ((ObjectSplitBinner::Split* )data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
-          //case SPATIAL_SPLIT: ((SpatialSplitBinner::Split*)data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
+        case SPATIAL_SPLIT: ((SpatialSplit::Split*)data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
         case TYPE_SPLIT   : ((ObjectTypePartitioning::Split*   )data)->split(threadIndex,alloc,prims,lprims,rprims); break;         
         default           : split_fallback(threadIndex,alloc,prims,lprims,rprims); break;
         }
@@ -348,7 +409,7 @@ namespace embree
       {
         switch (type) {
         case OBJECT_SPLIT : ((ObjectSplitBinner::Split* )data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
-          //case SPATIAL_SPLIT: ((SpatialSplitBinner::Split*)data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
+        case SPATIAL_SPLIT: ((SpatialSplit::Split*)data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
         case TYPE_SPLIT   : ((ObjectTypePartitioning::Split*   )data)->split(threadIndex,alloc,prims,lprims,rprims); break;         
         default           : split_fallback(threadIndex,alloc,prims,lprims,rprims); break;
         }
@@ -410,6 +471,9 @@ namespace embree
     size_t maxLeafSize;                 //!< maximal size of a leaf
     PrimRefBlockAlloc<Bezier1> allocBezierRefs;                 //!< Allocator for primitive blocks
     PrimRefBlockAlloc<PrimRef> allocTriRefs;                 //!< Allocator for primitive blocks
+
+    /*! Compute the number of blocks occupied for each dimension. */
+    __forceinline static ssei blocks(const ssei& a) { return (a+ssei((1 << logBlockSize)-1)) >> logBlockSize; } // FIXME: only use Vec3ia type
 
     /*! Compute the number of blocks occupied for each dimension. */
     __forceinline static Vec3ia blocks(const Vec3ia& a) { return (a+Vec3ia((1 << logBlockSize)-1)) >> logBlockSize; }

@@ -307,6 +307,299 @@ namespace embree
     }
   }
 
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+
+  BVH4Builder2::SpatialSplit::SpatialSplit(const LinearSpace3fa& space, TriRefList& tris, BezierRefList& beziers)
+    : space(space)
+  {
+    /* calculate geometry bounds */
+    geomBounds = empty;
+    for (TriRefList::block_iterator_unsafe i=tris; i; i++)
+      //geomBounds.extend(i->bounds(space));
+      geomBounds.extend(primBounds(space,*i));
+
+    for (BezierRefList::block_iterator_unsafe i=beziers; i; i++)
+      geomBounds.extend(i->bounds(space));
+
+    /* calculate binning function */
+    ofs  = (ssef) geomBounds.lower;
+    diag = (ssef) geomBounds.size();
+    scale = select(diag != 0.0f,rcp(diag) * ssef(BINS * 0.99f),ssef(0.0f));
+
+    /* initialize bins */
+    for (size_t i=0; i<BINS; i++) {
+      bounds[i][0] = bounds[i][1] = bounds[i][2] = bounds[i][3] = empty;
+      areas [i][0] = areas [i][1] = areas [i][2] = areas [i][3] = 0.0f;
+      numTriBegin[i] = numTriEnd[i] = 0;
+      numBezierBegin[i] = numBezierEnd[i] = 0;
+    }
+
+    bin(tris);
+    bin(beziers);
+    best();
+  }
+
+  void BVH4Builder2::SpatialSplit::bin(TriRefList& tris)
+  {
+    for (TriRefList::block_iterator_unsafe i=tris; i; i++)
+    {
+      PrimRef prim = *i;
+      TriangleMesh* mesh = (TriangleMesh*) g_scene->get(i->geomID());
+      TriangleMesh::Triangle tri = mesh->triangle(i->primID());
+      //BBox3fa primBounds = empty;
+      const Vec3fa v0 = xfmPoint(space,mesh->vertex(tri.v[0])); //primBounds.extend(v0);
+      const Vec3fa v1 = xfmPoint(space,mesh->vertex(tri.v[1])); //primBounds.extend(v1);
+      const Vec3fa v2 = xfmPoint(space,mesh->vertex(tri.v[2])); //primBounds.extend(v2);
+      const ssei bin0 = clamp(floori((ssef(v0)-ofs)*scale),ssei(0),ssei(BINS-1));
+      const ssei bin1 = clamp(floori((ssef(v1)-ofs)*scale),ssei(0),ssei(BINS-1));
+      const ssei bin2 = clamp(floori((ssef(v2)-ofs)*scale),ssei(0),ssei(BINS-1));
+      const ssei startbin = min(bin0,bin1,bin2);
+      const ssei endbin   = max(bin0,bin1,bin2);
+
+      for (size_t dim=0; dim<3; dim++) 
+      {
+        size_t bin;
+        PrimRef rest = prim;
+        for (bin=startbin[dim]; bin<endbin[dim]; bin++) 
+        {
+          const float pos = float(bin+1)/scale[dim]+ofs[dim];
+          
+          PrimRef left,right;
+          splitTriangle(prim,dim,pos,v0,v1,v2,left,right);
+
+          bounds[bin][dim].extend(left.bounds());
+          areas [bin][dim] += halfArea(left.bounds()); // FIXME: not correct
+          rest = right;
+        }
+        numTriBegin[startbin[dim]][dim]++;
+        numTriEnd  [endbin  [dim]][dim]++;
+        bounds[bin][dim].extend(rest.bounds());
+        areas [bin][dim] += halfArea(rest.bounds());  // FIXME: not correct
+      }
+    }
+  }
+
+  void BVH4Builder2::SpatialSplit::bin(BezierRefList& beziers)
+  {
+    for (BezierRefList::block_iterator_unsafe i=beziers; i; i++)
+    {
+      const Vec3fa v0 = xfmPoint(space,i->p0);
+      const Vec3fa v1 = xfmPoint(space,i->p3);
+      const ssei bin0 = clamp(floori((ssef(v0)-ofs)*scale),ssei(0),ssei(BINS-1));
+      const ssei bin1 = clamp(floori((ssef(v1)-ofs)*scale),ssei(0),ssei(BINS-1));
+      const ssei startbin = min(bin0,bin1);
+      const ssei endbin   = max(bin0,bin1);
+
+      for (size_t dim=0; dim<3; dim++) 
+      {
+        size_t bin;
+        Bezier1 curve = *i;
+        for (bin=startbin[dim]; bin<endbin[dim]; bin++) // FIXME: one can prevent many transformations in this loop here !!!
+        {
+          const float pos = float(bin+1)/scale[dim]+ofs[dim];
+          const Vec3fa plane(space.vx[dim],space.vy[dim],space.vz[dim],-pos);
+          Bezier1 bincurve,restcurve; 
+          if (curve.split(plane,bincurve,restcurve)) {
+            const BBox3fa cbounds = bincurve.bounds(space);
+            bounds[bin][dim].extend(cbounds);
+            areas [bin][dim] += halfArea(cbounds); // FIXME: not correct
+            curve = restcurve;
+          }
+        }
+        numBezierBegin[startbin[dim]][dim]++;
+        numBezierEnd  [endbin  [dim]][dim]++;
+        const BBox3fa cbounds = curve.bounds(space);
+        bounds[bin][dim].extend(cbounds);
+        areas [bin][dim] += halfArea(cbounds);  // FIXME: not correct
+      }
+    }
+  }
+
+    void BVH4Builder2::SpatialSplit::best()
+    {
+      /* sweep from right to left and compute parallel prefix of merged bounds */
+    ssef rAreas[BINS];
+    ssei rCounts[BINS];
+    ssei triCount = 0, bezierCount = 0; BBox3fa bx = empty; BBox3fa by = empty; BBox3fa bz = empty;
+    for (size_t i=BINS-1; i>0; i--)
+    {
+      triCount += numTriEnd[i];
+      bezierCount += numBezierEnd[i];
+      rCounts[i] = blocks(triCount) + bezierCount;
+      bx.extend(bounds[i][0]); rAreas[i][0] = halfArea(bx);
+      by.extend(bounds[i][1]); rAreas[i][1] = halfArea(by);
+      bz.extend(bounds[i][2]); rAreas[i][2] = halfArea(bz);
+    }
+    
+    /* sweep from left to right and compute SAH */
+    ssei ii = 1; ssef bestSAH = pos_inf; ssei bestPos = 0; ssei bestLeft = 0; ssei bestRight = 0;
+    triCount = 0; bezierCount = 0; bx = empty; by = empty; bz = empty;
+    for (size_t i=1; i<BINS; i++, ii+=1)
+    {
+      triCount += numTriBegin[i-1];
+      bezierCount += numBezierBegin[i-1];
+      bx.extend(bounds[i-1][0]); float Ax = halfArea(bx);
+      by.extend(bounds[i-1][1]); float Ay = halfArea(by);
+      bz.extend(bounds[i-1][2]); float Az = halfArea(bz);
+      const ssef lArea = ssef(Ax,Ay,Az,Az);
+      const ssef rArea = rAreas[i];
+      const ssei lCount = blocks(triCount) + bezierCount;
+      const ssef sah = lArea*ssef(lCount) + rArea*ssef(rCounts[i]);
+      bestPos  = select(sah < bestSAH,ii ,bestPos);
+      bestSAH  = select(sah < bestSAH,sah,bestSAH);
+    }
+    
+    /* find best dimension */
+    split.space = space;
+    split.ofs = ofs;
+    split.scale = scale;
+    split.cost = inf;
+    split.dim = -1;
+    split.pos = 0.0f;
+    
+    float bestCost = inf;
+    for (size_t dim=0; dim<3; dim++) 
+    {
+      /* ignore zero sized dimensions */
+      if (unlikely(scale[dim] == 0.0f)) 
+        continue;
+      
+      /* test if this is a better dimension */
+      if (bestSAH[dim] < bestCost && bestPos[dim] != 0) {
+        split.dim = dim;
+        split.pos = bestPos[dim]/scale[dim]+ofs[dim];
+        split.cost = bestSAH[dim];
+        bestCost = bestSAH[dim];
+      }
+    }
+    }
+      
+  void BVH4Builder2::SpatialSplit::Split::split(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims_o, TriRefList& rprims_o) const
+  {
+    TriRefList::item* lblock = lprims_o.insert(alloc->malloc(threadIndex));
+    TriRefList::item* rblock = rprims_o.insert(alloc->malloc(threadIndex));
+    
+    /* sort each primitive to left, right, or left and right */
+    while (atomic_set<TriRefBlock>::item* block = prims.take()) 
+    {
+      for (size_t i=0; i<block->size(); i++) 
+      {
+        const PrimRef& prim = block->at(i); 
+        TriangleMesh* mesh = (TriangleMesh*) g_scene->get(prim.geomID());
+        TriangleMesh::Triangle tri = mesh->triangle(prim.primID());
+        BBox3fa bounds = empty;
+        const Vec3fa v0 = xfmPoint(space,mesh->vertex(tri.v[0])); bounds.extend(v0);
+        const Vec3fa v1 = xfmPoint(space,mesh->vertex(tri.v[1])); bounds.extend(v1);
+        const Vec3fa v2 = xfmPoint(space,mesh->vertex(tri.v[2])); bounds.extend(v2);
+
+        /* sort to the left side */
+        if (bounds.lower[dim] <= pos && bounds.upper[dim] <= pos)
+        {
+          if (likely(lblock->insert(prim))) continue; 
+          lblock = lprims_o.insert(alloc->malloc(threadIndex));
+          lblock->insert(prim);
+          continue;
+        }
+
+        /* sort to the right side */
+        if (bounds.lower[dim] >= pos && bounds.upper[dim] >= pos)
+        {
+          if (likely(rblock->insert(prim))) continue;
+          rblock = rprims_o.insert(alloc->malloc(threadIndex));
+          rblock->insert(prim);
+          continue;
+        }
+
+        /* split and sort to left and right */
+        PrimRef left,right;
+        splitTriangle(prim,dim,pos,v0,v1,v2,left,right);
+
+        if (!lblock->insert(left)) {
+          lblock = lprims_o.insert(alloc->malloc(threadIndex));
+          lblock->insert(left);
+        }
+        
+        if (!rblock->insert(right)) {
+          rblock = rprims_o.insert(alloc->malloc(threadIndex));
+          rblock->insert(right);
+        }
+      }
+      alloc->free(threadIndex,block);
+    }
+  }
+
+  void BVH4Builder2::SpatialSplit::Split::split(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims_o, BezierRefList& rprims_o) const
+  {
+    /* calculate splitting plane */
+    const Vec3fa plane(space.vx[dim],space.vy[dim],space.vz[dim],-pos);
+    
+    BezierRefList::item* lblock = lprims_o.insert(alloc->malloc(threadIndex));
+    BezierRefList::item* rblock = rprims_o.insert(alloc->malloc(threadIndex));
+    
+    /* sort each primitive to left, right, or left and right */
+    while (BezierRefList::item* block = prims.take()) 
+    {
+      for (size_t i=0; i<block->size(); i++) 
+      {
+        const Bezier1& prim = block->at(i); 
+        const float p0p = dot(prim.p0,plane)+plane.w;
+        const float p3p = dot(prim.p3,plane)+plane.w;
+
+        /* sort to the left side */
+        if (p0p <= 0.0f && p3p <= 0.0f)
+        {
+          if (likely(lblock->insert(prim))) continue; 
+          lblock = lprims_o.insert(alloc->malloc(threadIndex));
+          lblock->insert(prim);
+          continue;
+        }
+
+        /* sort to the right side */
+        if (p0p >= 0.0f && p3p >= 0.0f)
+        {
+          if (likely(rblock->insert(prim))) continue;
+          rblock = rprims_o.insert(alloc->malloc(threadIndex));
+          rblock->insert(prim);
+          continue;
+        }
+
+        /* split and sort to left and right */
+        Bezier1 left,right;
+        if (prim.split(plane,left,right)) 
+        {
+          if (!lblock->insert(left)) {
+            lblock = lprims_o.insert(alloc->malloc(threadIndex));
+            lblock->insert(left);
+          }
+          if (!rblock->insert(right)) {
+            rblock = rprims_o.insert(alloc->malloc(threadIndex));
+            rblock->insert(right);
+          }
+          continue;
+        }
+
+        /* insert to left side as fallback */
+        if (!lblock->insert(prim)) {
+          lblock = lprims_o.insert(alloc->malloc(threadIndex));
+          lblock->insert(prim);
+        }
+      }
+      alloc->free(threadIndex,block);
+    }
+  }
+
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////////////////////
+
   BVH4Builder2::ObjectTypePartitioning::ObjectTypePartitioning (TriRefList& tris, BezierRefList& beziers)
   {
     PrimInfo pinfo;
@@ -531,7 +824,7 @@ namespace embree
       float area = 0.0f;
       for (BezierRefList::block_iterator_unsafe j = prims; j; j++) {
         const BBox3fa cbounds = j->bounds(space);
-        area += embree::area(cbounds);
+        area += halfArea(cbounds);
         bounds.extend(cbounds);
       }
 
@@ -674,14 +967,6 @@ namespace embree
 
   void BVH4Builder2::heuristic(TriRefList& tris, BezierRefList& beziers, GeneralSplit& split)
   {
-    /* perform binning */
-#if 0
-    ObjectSplitBinner heuristic(one,tris,beziers); 
-    split = heuristic.split;
-    split.aligned = true;
-
-#else
-
     float bestSAH = inf;
 
     ObjectTypePartitioning object_type(tris,beziers);
@@ -692,8 +977,8 @@ namespace embree
     bestSAH = min(bestSAH,object_binning_aligned.split.splitSAH());
     //PRINT(object_binning_aligned.split.splitSAH());
 
-    //SpatialBinning spatial_binning_aligned(tris,beziers);
-    //bestSAH = min(bestSAH,spatial_binning_aligned.split.splitSAH());
+    SpatialSplit spatial_binning_aligned(one,tris,beziers);
+    bestSAH = min(bestSAH,spatial_binning_aligned.split.splitSAH());
     
     const LinearSpace3fa hairspace = computeHairSpace(beziers);
     ObjectSplitBinner object_binning_unaligned(hairspace,tris,beziers);
@@ -706,8 +991,8 @@ namespace embree
       new (&split) GeneralSplit(object_binning_aligned.pinfo.size());
     else if (bestSAH == object_binning_aligned.split.splitSAH())
       new (&split) GeneralSplit(object_binning_aligned.split,true);
-    //else if (bestSAH == spatial_binning_aligned.split.splitSAH()) 
-    //new (&split) GeneralSplit(spatial_binning_aligned.split,true);
+    else if (bestSAH == spatial_binning_aligned.split.splitSAH()) 
+      new (&split) GeneralSplit(spatial_binning_aligned.split,true);
     else if (bestSAH == object_binning_unaligned.split.splitSAH())
       new (&split) GeneralSplit(object_binning_unaligned.split,false);
     //else if (bestSAH == spatial_binning_unaligned.split.splitSAH())
@@ -721,8 +1006,6 @@ namespace embree
     else
       throw std::runtime_error("internal error");
 //      new (&split) GeneralSplit(object_binning_aligned.pinfo.size());
-    
-#endif
   }
 
   BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, TriRefList& prims, const PrimInfo& pinfo)
