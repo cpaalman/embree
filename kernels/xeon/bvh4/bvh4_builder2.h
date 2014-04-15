@@ -333,7 +333,7 @@ namespace embree
     
     class __aligned(16) GeneralSplit
     {
-      enum Type { OBJECT_SPLIT, SPATIAL_SPLIT, TYPE_SPLIT, FALLBACK_SPLIT };
+      enum Type { OBJECT_SPLIT, OBJECT_SPLIT_UNALIGNED, SPATIAL_SPLIT, TYPE_SPLIT, FALLBACK_SPLIT };
 
     public:
 
@@ -349,6 +349,15 @@ namespace embree
         //halfAreaGeomBounds = halfArea(split.pinfo.geomBounds);
         //num = split.pinfo.size();
         new (data) ObjectSplitBinner::Split(split);
+      }
+
+      __forceinline GeneralSplit(const ObjectSplitBinnerUnaligned::Split& split) {
+        type = OBJECT_SPLIT_UNALIGNED; aligned = false;
+        //leaf_sah = split.leafSAH();
+        split_sah = split.splitSAH();
+        //halfAreaGeomBounds = halfArea(split.pinfo.geomBounds);
+        //num = split.pinfo.size();
+        new (data) ObjectSplitBinnerUnaligned::Split(split);
       }
 
       __forceinline GeneralSplit(const SpatialSplit::Split& split, bool aligned_in) {
@@ -373,6 +382,7 @@ namespace embree
       {
         switch (type) {
         case OBJECT_SPLIT : ((ObjectSplitBinner::Split* )data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
+        case OBJECT_SPLIT_UNALIGNED : ((ObjectSplitBinnerUnaligned::Split* )data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
         case SPATIAL_SPLIT: ((SpatialSplit::Split*)data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
         case TYPE_SPLIT   : ((ObjectTypePartitioning::Split*   )data)->split(threadIndex,alloc,prims,lprims,rprims); break;         
         default           : split_fallback(threadIndex,alloc,prims,lprims,rprims); break;
@@ -383,6 +393,7 @@ namespace embree
       {
         switch (type) {
         case OBJECT_SPLIT : ((ObjectSplitBinner::Split* )data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
+        case OBJECT_SPLIT_UNALIGNED : ((ObjectSplitBinnerUnaligned::Split* )data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
         case SPATIAL_SPLIT: ((SpatialSplit::Split*)data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
         case TYPE_SPLIT   : ((ObjectTypePartitioning::Split*   )data)->split(threadIndex,alloc,prims,lprims,rprims); break;         
         default           : split_fallback(threadIndex,alloc,prims,lprims,rprims); break;
@@ -412,9 +423,13 @@ namespace embree
         : dst(dst), depth(depth), tris(tris), beziers(beziers), pinfo(pinfo), split(split) {}
 
     public:
+      //__forceinline friend bool operator< (const BuildTask& a, const BuildTask& b) {
+      //  return a.pinfo.size() < b.pinfo.size();
+      //}
+
       __forceinline friend bool operator< (const BuildTask& a, const BuildTask& b) {
-        return a.pinfo.size() < b.pinfo.size();
-      }
+        return area(a.pinfo.geomBounds) < area(b.pinfo.geomBounds);
+        }
 
       /*! execute single task and create subtasks */
       void process(size_t threadIndex, BVH4Builder2* builder, BuildTask task_o[BVH4::N], size_t& N);
@@ -433,6 +448,12 @@ namespace embree
 
   public:
 
+    const NAABBox3fa computeUnalignedBounds(BezierRefList& prims);
+
+    void processTask(size_t threadIndex, BuildTask& task, BuildTask task_o[BVH4::N], size_t& numTasks_o);
+    void recurseTask(size_t threadIndex, BuildTask& task);
+
+    static const PrimInfo computePrimInfo(BezierRefList& beziers);
     static const PrimInfo computePrimInfo(TriRefList& tris, BezierRefList& beziers);
 
     /*! calculate bounds for range of primitives */

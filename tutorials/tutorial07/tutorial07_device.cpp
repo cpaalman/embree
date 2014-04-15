@@ -329,7 +329,7 @@ void addGroundPlane (ISPCScene* scene)
 RTCScene convertScene(ISPCScene* scene_in)
 {
   //scene_in->numHairSets = 0;
-  //scene_in->numMeshes = 0;
+  scene_in->numMeshes = 0;
 
   /* create scene */
   RTCScene scene_out = rtcNewScene(RTC_SCENE_STATIC | RTC_SCENE_INCOHERENT,RTC_INTERSECT1);

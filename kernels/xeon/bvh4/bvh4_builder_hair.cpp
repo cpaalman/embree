@@ -136,6 +136,7 @@ namespace embree
     if (bvh->primTy[0] == &SceneBezier1i::type) bvh->numVertices = numVertices;
 
     /* start recursive build */
+    PRINT(g_hair_builder_replication_factor);
     remainingReplications = g_hair_builder_replication_factor*numPrimitives;
     const NAABBox3fa ubounds = computeUnalignedBounds(prims);
     BuildTask task(&bvh->root,0,numPrimitives,false,prims,ubounds);
@@ -325,12 +326,12 @@ namespace embree
       }
     }
     //assert(bestArea != (float)inf); // FIXME: can get raised if all selected curves are points
-#ifdef DEBUG
+/*#ifdef DEBUG
     if (bestArea == (float)inf)
       {
         std::cout << "WARNING: bestArea == (float)inf" << std::endl; 
       }
-#endif
+      #endif*/
 
     bestBounds.upper.w = bestArea;
     return NAABBox3fa(bestSpace,bestBounds);
