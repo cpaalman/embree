@@ -961,7 +961,15 @@ namespace embree
     //else                     bvh->numVertices = 0;
 
     BuildTask task(&bvh->root,1,tris,beziers,pinfo,split);
+
+#if 0
     task.recurse(threadIndex,this);
+#else
+    numActiveTasks = 1;
+    tasks.push_back(task);
+    push_heap(tasks.begin(),tasks.end());
+    TaskScheduler::executeTask(threadIndex,threadCount,_task_build_parallel,this,threadCount,"BVH4Builder2::build_parallel");
+#endif
     //bvh->root = recurse(threadIndex,1,tris,beziers,pinfo,split);
 
     /* free all temporary blocks */
@@ -1217,6 +1225,46 @@ namespace embree
     process(threadIndex,builder,tasks,numChildren);
     for (size_t i=0; i<numChildren; i++) 
       tasks[i].recurse(threadIndex,builder);
+  }
+
+  void BVH4Builder2::task_build_parallel(size_t threadIndex, size_t threadCount, size_t taskIndex, size_t taskCount, TaskScheduler::Event* event) 
+  {
+    while (numActiveTasks) 
+    {
+      taskMutex.lock();
+      if (tasks.size() == 0) {
+        taskMutex.unlock();
+        continue;
+      }
+
+      /* take next task from heap */
+      BuildTask task = tasks.front();
+      pop_heap(tasks.begin(),tasks.end());
+      tasks.pop_back();
+      taskMutex.unlock();
+
+      /* recursively finish task */
+      if (task.pinfo.size() < 512) {
+        atomic_add(&numActiveTasks,-1);
+        task.recurse(threadIndex,this);
+      }
+      
+      /* execute task and add child tasks */
+      else 
+      {
+        size_t numChildren;
+        BuildTask ctasks[BVH4::N];
+        task.process(threadIndex,this,ctasks,numChildren);
+        taskMutex.lock();
+        for (size_t i=0; i<numChildren; i++) {
+          atomic_add(&numActiveTasks,+1);
+          tasks.push_back(ctasks[i]);
+          push_heap(tasks.begin(),tasks.end());
+        }
+        atomic_add(&numActiveTasks,-1);
+        taskMutex.unlock();
+      }
+    }
   }
   
   Builder* BVH4Builder2ObjectSplit4 (void* accel, BuildSource* source, void* geometry, const size_t minLeafSize, const size_t maxLeafSize) {

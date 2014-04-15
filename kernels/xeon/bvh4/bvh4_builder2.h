@@ -455,8 +455,8 @@ namespace embree
       size_t depth;
       TriRefList tris;
       BezierRefList beziers;
-      const PrimInfo pinfo;
-      const GeneralSplit split;
+      PrimInfo pinfo;
+      GeneralSplit split;
     };
 
   public:
@@ -492,11 +492,12 @@ namespace embree
 
     void heuristic(TriRefList& tris, BezierRefList& beziers, GeneralSplit& split);
 
+    TASK_RUN_FUNCTION(BVH4Builder2,task_build_parallel);
+
   private:
     BuildSource* source;      //!< build source interface
     void* geometry;           //!< input geometry
     
-    atomic_t remainingSpatialSplits;
 
   public:
     size_t minLeafSize;                 //!< minimal size of a leaf
@@ -515,5 +516,11 @@ namespace embree
 
   public:
     BVH4* bvh;                      //!< Output BVH4
+
+    MutexSys taskMutex;
+    volatile atomic_t numActiveTasks;
+    volatile atomic_t remainingSpatialSplits;
+    std::vector<BuildTask> tasks;
+
   };
 }
