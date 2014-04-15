@@ -288,7 +288,7 @@ namespace embree
 
     public:
 
-      SpatialSplit (const LinearSpace3fa& space, TriRefList& tris, BezierRefList& beziers);
+      SpatialSplit (/*const LinearSpace3fa& space,*/ TriRefList& tris, BezierRefList& beziers);
 
       class Split
       {
@@ -305,7 +305,7 @@ namespace embree
         void split(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims) const;
       
       public:
-        LinearSpace3fa space;
+        //LinearSpace3fa space;
         float pos;
         int ipos;
         int dim;
@@ -326,13 +326,13 @@ namespace embree
       ssef scale;
 
     BBox3fa bounds[BINS][4];
-    float   areas [BINS][4];
+      //float   areas [BINS][4];
     ssei    numTriBegin[BINS];
     ssei    numTriEnd[BINS];
     ssei    numBezierBegin[BINS];
     ssei    numBezierEnd[BINS];
 
-      const LinearSpace3fa space;
+      //const LinearSpace3fa space;
     };
 
   class ObjectTypePartitioning

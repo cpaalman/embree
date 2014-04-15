@@ -78,8 +78,8 @@ namespace embree
         right.extend(c);
       }
     }
-    assert(!left.empty());  // happens if split does not hit triangle
-    assert(!right.empty()); // happens if split does not hit triangle
+    //assert(!left.empty());  // happens if split does not hit triangle
+    //assert(!right.empty()); // happens if split does not hit triangle
 
     /* safe clip against current bounds */
     BBox3fa bounds = prim.bounds();
