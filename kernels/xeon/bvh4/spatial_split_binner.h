@@ -40,6 +40,7 @@ namespace embree
     /*! Compute the number of blocks occupied in one dimension. */
     __forceinline static int  blocks(size_t a) { return (int)((a+((1LL << logBlockSize)-1)) >> logBlockSize); }
 
+    SpatialSplit (TriRefList& tris, float triCost);
     SpatialSplit (TriRefList& tris, float triCost, BezierRefList& beziers, float bezierCost);
     
     class Split

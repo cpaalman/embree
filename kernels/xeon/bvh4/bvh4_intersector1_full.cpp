@@ -25,7 +25,7 @@
 #endif
 
 #define TFAR(x) x
-#define NTFAR(x)  
+#define NTFAR(x)   
 
 namespace embree
 { 

@@ -173,8 +173,9 @@ namespace embree
   {
     Accel::Intersectors intersectors;
     intersectors.ptr = bvh;
-    intersectors.intersector1 = BVH4Triangle4Bezier1Intersector1;
+    //intersectors.intersector1 = BVH4Triangle4Bezier1Intersector1;
     //intersectors.intersector1 = BVH4Bezier1Intersector1;
+    intersectors.intersector1 = BVH4Triangle4Intersector1Moeller;
     intersectors.intersector4 = NULL;
     intersectors.intersector8 = NULL;
     intersectors.intersector16 = NULL;

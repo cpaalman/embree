@@ -21,6 +21,7 @@
 #include "common/scene_triangle_mesh.h"
 #include "geometry/bezier1.h"
 #include "geometry/triangle4.h"
+#include "bvh4_rotate.h"
 
 #include "builders/splitter_fallback.h"
 
@@ -154,6 +155,28 @@ namespace embree
     {
       pinfo.num += block->size();
       pinfo.numBeziers += block->size();
+      for (size_t i=0; i<block->size(); i++)
+      {
+        const BBox3fa bounds = block->at(i).bounds(); 
+        geomBounds.extend(bounds);
+        centBounds.extend(center2(bounds));
+      }
+    }
+    pinfo.geomBounds = geomBounds;
+    pinfo.centBounds = centBounds;
+    return pinfo;
+  }
+
+  const PrimInfo BVH4Builder2::computePrimInfo(TriRefList& tris)
+  {
+    PrimInfo pinfo;
+    BBox3fa geomBounds = empty;
+    BBox3fa centBounds = empty;
+    TriRefList::iterator t=tris;
+    while (TriRefBlock* block = t.next()) 
+    {
+      pinfo.num += block->size();
+      pinfo.numTriangles += block->size();
       for (size_t i=0; i<block->size(); i++)
       {
         const BBox3fa bounds = block->at(i).bounds(); 
@@ -347,7 +370,7 @@ namespace embree
       }
     }
     PrimInfo pinfo = computePrimInfo(tris,beziers);
-    GeneralSplit split; heuristic(pinfo,tris,beziers,split,pinfo.geomBounds);
+    GeneralSplit split; computeSplit(pinfo,tris,beziers,split,pinfo.geomBounds);
 
     /* perform binning */
     bvh->numPrimitives = numPrimitives;
@@ -355,11 +378,13 @@ namespace embree
     //if (primTy.needVertices) bvh->numVertices = numVertices; // FIXME
     //else                     bvh->numVertices = 0;
 
-    BuildTask task(&bvh->root,1,tris,beziers,pinfo,split,geomBounds);
 
-#if 0
-    task.recurse(threadIndex,this);
+#if 1
+    BuildTask task(&bvh->root,1,tris,beziers,pinfo,split,geomBounds);
+    recurseTask(threadIndex,task);
+    for (int i=0; i<5; i++) BVH4Rotate::rotate(bvh,*task.dst); 
 #else
+    BuildTask task(&bvh->root,1,tris,beziers,pinfo,split,geomBounds);
     numActiveTasks = 1;
     tasks.push_back(task);
     push_heap(tasks.begin(),tasks.end());
@@ -383,7 +408,7 @@ namespace embree
     }
   }
 
-  void BVH4Builder2::heuristic(PrimInfo& pinfo, TriRefList& tris, BezierRefList& beziers, GeneralSplit& split, const NAABBox3fa& nodeBounds)
+  void BVH4Builder2::computeSplit(PrimInfo& pinfo, TriRefList& tris, BezierRefList& beziers, GeneralSplit& split, const NAABBox3fa& nodeBounds)
   {
     float bestSAH = inf;
     const float triCost = 1.0f; // FIXME:
@@ -432,6 +457,33 @@ namespace embree
       new (&split) GeneralSplit(object_binning_unaligned.split);
     else if (bestSAH == object_type_split_sah) {
       new (&split) GeneralSplit(object_type.split);
+    }
+    else
+      throw std::runtime_error("internal error");
+  }
+
+  void BVH4Builder2::computeSplit(PrimInfo& pinfo, TriRefList& tris, GeneralSplit& split)
+  {
+    float bestSAH = inf;
+    const float triCost = 1.0f; // FIXME:
+
+    ObjectSplitBinner object_binning_aligned(tris,triCost);
+    float object_binning_aligned_sah = object_binning_aligned.split.splitSAH() + BVH4::travCostAligned*halfArea(pinfo.geomBounds);;
+    bestSAH = min(bestSAH,object_binning_aligned_sah);
+
+    bool enableSpatialSplits = false;
+    //bool enableSpatialSplits = remainingSpatialSplits > 0;
+    SpatialSplit spatial_binning_aligned(tris,triCost);
+    float spatial_binning_aligned_sah = spatial_binning_aligned.split.splitSAH() + BVH4::travCostAligned*halfArea(pinfo.geomBounds);;
+    if (enableSpatialSplits) bestSAH = min(bestSAH,spatial_binning_aligned_sah);
+    
+    if (bestSAH == float(inf))
+      new (&split) GeneralSplit(object_binning_aligned.pinfo.size());
+    else if (bestSAH == object_binning_aligned_sah)
+      new (&split) GeneralSplit(object_binning_aligned.split,true);
+    else if (enableSpatialSplits && bestSAH == spatial_binning_aligned_sah) {
+      new (&split) GeneralSplit(spatial_binning_aligned.split,true);
+      atomic_add(&remainingSpatialSplits,-spatial_binning_aligned.split.numSpatialSplits);
     }
     else
       throw std::runtime_error("internal error");
@@ -548,24 +600,22 @@ namespace embree
     return bvh->encodeNode(node);
   }
 
-  //typename BVH4Builder2::NodeRef BVH4Builder2::recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo, const GeneralSplit& split)
-  void BVH4Builder2::BuildTask::process(size_t threadIndex, BVH4Builder2* builder, BuildTask task_o[BVH4::N], size_t& N)
+  void BVH4Builder2::processTrianglesAndBeziers(size_t threadIndex, BuildTask& task, BuildTask task_o[BVH4::N], size_t& N)
   {
     /*! compute leaf and split cost */
-    const float leafSAH  = pinfo.leafSAH (1.0f,BVH4::intCost);
-    const float splitSAH = split.splitSAH() + BVH4::travCostAligned*halfArea(nodeBounds.bounds);
-    //assert(split.size() == 0 || leafSAH >= 0 && splitSAH >= 0);
+    const float leafSAH  = task.pinfo.leafSAH (1.0f,BVH4::intCost);
+    const float splitSAH = task.split.splitSAH() + BVH4::travCostAligned*halfArea(task.nodeBounds.bounds);
 
     /*! create a leaf node when threshold reached or SAH tells us to stop */
-    if (pinfo.size() <= builder->minLeafSize || depth > BVH4::maxBuildDepth || (pinfo.size() <= builder->maxLeafSize && leafSAH <= splitSAH)) {
-      *dst = builder->leaf(threadIndex,depth,tris,beziers,pinfo); N = 0; return;
+    if (task.pinfo.size() <= minLeafSize || task.depth > BVH4::maxBuildDepth || (task.pinfo.size() <= maxLeafSize && leafSAH <= splitSAH)) {
+      *task.dst = leaf(threadIndex,task.depth,task.tris,task.beziers,task.pinfo); N = 0; return;
     }
     
     /*! initialize child list */
-    TriRefList    ctris   [BVH4::N]; ctris   [0] = tris;
-    BezierRefList cbeziers[BVH4::N]; cbeziers[0] = beziers;
-    GeneralSplit  csplit[BVH4::N];   csplit  [0] = split;
-    PrimInfo      cpinfo[BVH4::N]; cpinfo[0] = pinfo;
+    TriRefList    ctris   [BVH4::N]; ctris   [0] = task.tris;
+    BezierRefList cbeziers[BVH4::N]; cbeziers[0] = task.beziers;
+    GeneralSplit  csplit[BVH4::N];   csplit  [0] = task.split;
+    PrimInfo      cpinfo[BVH4::N]; cpinfo[0] = task.pinfo;
     size_t numChildren = 1;
     bool aligned = true;
 
@@ -578,8 +628,8 @@ namespace embree
       for (size_t i=0; i<numChildren; i++) 
       {
         float dSAH = csplit[i].splitSAH()-cpinfo[i].leafSAH(1.0f,BVH4::intCost);
-        if (cpinfo[i].size() <= builder->minLeafSize) continue; 
-        if (cpinfo[i].size() > builder->maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
+        if (cpinfo[i].size() <= minLeafSize) continue; 
+        if (cpinfo[i].size() > maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
         if (dSAH <= bestSAH) { bestChild = i; bestSAH = dSAH; }
         //if (area(cpinfo[i].geomBounds) > bestSAH) { bestChild = i; bestSAH = area(cpinfo[i].geomBounds); }
       }
@@ -587,12 +637,12 @@ namespace embree
       
       /*! perform best found split and find new splits */
       aligned &= csplit[bestChild].aligned;
-      TriRefList    ltris,   rtris;    csplit[bestChild].split(threadIndex,&builder->allocTriRefs,   ctris[bestChild],   ltris,rtris);
-      BezierRefList lbeziers,rbeziers; csplit[bestChild].split(threadIndex,&builder->allocBezierRefs,cbeziers[bestChild],lbeziers,rbeziers);
+      TriRefList    ltris,   rtris;    csplit[bestChild].split(threadIndex,&allocTriRefs,   ctris[bestChild],   ltris,rtris);
+      BezierRefList lbeziers,rbeziers; csplit[bestChild].split(threadIndex,&allocBezierRefs,cbeziers[bestChild],lbeziers,rbeziers);
       PrimInfo linfo = computePrimInfo(ltris,lbeziers);
       PrimInfo rinfo = computePrimInfo(rtris,rbeziers);
-      GeneralSplit lsplit; builder->heuristic(linfo,ltris,lbeziers,lsplit,linfo.geomBounds); // FIXME: ,linfo.geomBounds not correct
-      GeneralSplit rsplit; builder->heuristic(rinfo,rtris,rbeziers,rsplit,rinfo.geomBounds);
+      GeneralSplit lsplit; computeSplit(linfo,ltris,lbeziers,lsplit,linfo.geomBounds); // FIXME: ,linfo.geomBounds not correct
+      GeneralSplit rsplit; computeSplit(rinfo,rtris,rbeziers,rsplit,rinfo.geomBounds);
       ctris[bestChild  ] = ltris; cbeziers[bestChild  ] = lbeziers; cpinfo[bestChild] = linfo; csplit[bestChild  ] = lsplit;
       ctris[numChildren] = rtris; cbeziers[numChildren] = rbeziers; cpinfo[numChildren] = rinfo; csplit[numChildren] = rsplit;
       numChildren++;
@@ -602,38 +652,94 @@ namespace embree
     /*! create an aligned node */
     if (aligned)
     {
-      BVH4::UANode* node = builder->bvh->allocUANode(threadIndex);
+      BVH4::UANode* node = bvh->allocUANode(threadIndex);
       for (size_t i=0; i<numChildren; i++) {
         const BBox3fa bounds = computeAlignedBounds(ctris[i],cbeziers[i]);
         node->set(i,bounds);
-        new (&task_o[i]) BuildTask(&node->child(i),depth+1,ctris[i],cbeziers[i],cpinfo[i],csplit[i],bounds);
+        new (&task_o[i]) BuildTask(&node->child(i),task.depth+1,ctris[i],cbeziers[i],cpinfo[i],csplit[i],bounds);
       }
-      *dst = builder->bvh->encodeNode(node);
+      *task.dst = bvh->encodeNode(node);
       N = numChildren;
     } 
 
     /*! create an unaligned node */
     else
     {
-      BVH4::UUNode* node = builder->bvh->allocUUNode(threadIndex);
+      BVH4::UUNode* node = bvh->allocUUNode(threadIndex);
       for (size_t i=0; i<numChildren; i++) {
         const LinearSpace3fa hairspace = computeHairSpace(cbeziers[i]);
         const NAABBox3fa bounds = computeAlignedBounds(ctris[i],cbeziers[i],hairspace);
         node->set(i,bounds);
-        new (&task_o[i]) BuildTask(&node->child(i),depth+1,ctris[i],cbeziers[i],cpinfo[i],csplit[i],bounds);
+        new (&task_o[i]) BuildTask(&node->child(i),task.depth+1,ctris[i],cbeziers[i],cpinfo[i],csplit[i],bounds);
       }
-      *dst = builder->bvh->encodeNode(node);
+      *task.dst = bvh->encodeNode(node);
       N = numChildren;
     }
   }
 
-  void BVH4Builder2::BuildTask::recurse(size_t threadIndex, BVH4Builder2* builder)
+  void BVH4Builder2::processTriangles(size_t threadIndex, BuildTask& task, BuildTask task_o[BVH4::N], size_t& N)
+  {
+    /*! compute leaf and split cost */
+    const float leafSAH  = task.pinfo.leafSAH (1.0f,BVH4::intCost);
+    const float splitSAH = task.split.splitSAH() + BVH4::travCostAligned*halfArea(task.nodeBounds.bounds);
+
+    /*! create a leaf node when threshold reached or SAH tells us to stop */
+    if (task.pinfo.size() <= minLeafSize || task.depth > BVH4::maxBuildDepth || (task.pinfo.size() <= maxLeafSize && leafSAH <= splitSAH)) {
+      *task.dst = leaf(threadIndex,task.depth,task.tris,task.pinfo); N = 0; return;
+    }
+    
+    /*! initialize child list */
+    TriRefList    ctris   [BVH4::N]; ctris   [0] = task.tris;
+    GeneralSplit  csplit[BVH4::N];   csplit  [0] = task.split;
+    PrimInfo      cpinfo[BVH4::N]; cpinfo[0] = task.pinfo;
+    size_t numChildren = 1;
+
+    /*! split until node is full or SAH tells us to stop */
+    do {
+      
+      /*! find best child to split */
+      float bestSAH = 0; 
+      ssize_t bestChild = -1;
+      for (size_t i=0; i<numChildren; i++) 
+      {
+        float dSAH = csplit[i].splitSAH()-cpinfo[i].leafSAH(1.0f,BVH4::intCost);
+        if (cpinfo[i].size() <= minLeafSize) continue; 
+        if (cpinfo[i].size() > maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
+        if (dSAH <= bestSAH) { bestChild = i; bestSAH = dSAH; }
+      }
+      if (bestChild == -1) break;
+      
+      /*! perform best found split and find new splits */
+      TriRefList    ltris,   rtris;    csplit[bestChild].split(threadIndex,&allocTriRefs,   ctris[bestChild],   ltris,rtris);
+      PrimInfo linfo = computePrimInfo(ltris);
+      PrimInfo rinfo = computePrimInfo(rtris);
+      GeneralSplit lsplit; computeSplit(linfo,ltris,lsplit);
+      GeneralSplit rsplit; computeSplit(rinfo,rtris,rsplit);
+      ctris[bestChild  ] = ltris; cpinfo[bestChild] = linfo; csplit[bestChild  ] = lsplit;
+      ctris[numChildren] = rtris; cpinfo[numChildren] = rinfo; csplit[numChildren] = rsplit;
+      numChildren++;
+      
+    } while (numChildren < BVH4::N);
+    
+    /*! create an aligned node */
+    BVH4::UANode* node = bvh->allocUANode(threadIndex);
+    for (size_t i=0; i<numChildren; i++) {
+      const BBox3fa bounds = computeAlignedBounds(ctris[i]); // FIXME: use pinfo
+      node->set(i,bounds);
+      new (&task_o[i]) BuildTask(&node->child(i),task.depth+1,ctris[i],cpinfo[i],csplit[i],bounds);
+    }
+    *task.dst = bvh->encodeNode(node);
+    N = numChildren;
+  }
+
+  void BVH4Builder2::recurseTask(size_t threadIndex, BuildTask& task)
   {
     size_t numChildren;
     BuildTask tasks[BVH4::N];
-    process(threadIndex,builder,tasks,numChildren);
+    processTriangles(threadIndex,task,tasks,numChildren);
+    //processTrianglesAndBeziers(threadIndex,task,tasks,numChildren);
     for (size_t i=0; i<numChildren; i++) 
-      tasks[i].recurse(threadIndex,builder);
+      recurseTask(threadIndex,tasks[i]);
   }
 
   void BVH4Builder2::task_build_parallel(size_t threadIndex, size_t threadCount, size_t taskIndex, size_t taskCount, TaskScheduler::Event* event) 
@@ -655,7 +761,7 @@ namespace embree
       /* recursively finish task */
       if (task.pinfo.size() < 512) {
         atomic_add(&numActiveTasks,-1);
-        task.recurse(threadIndex,this);
+        recurseTask(threadIndex,task);
       }
       
       /* execute task and add child tasks */
@@ -663,7 +769,7 @@ namespace embree
       {
         size_t numChildren;
         BuildTask ctasks[BVH4::N];
-        task.process(threadIndex,this,ctasks,numChildren);
+        processTrianglesAndBeziers(threadIndex,task,ctasks,numChildren);
         taskMutex.lock();
         for (size_t i=0; i<numChildren; i++) {
           atomic_add(&numActiveTasks,+1);

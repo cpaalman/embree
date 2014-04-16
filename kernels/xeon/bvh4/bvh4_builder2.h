@@ -128,17 +128,14 @@ namespace embree
       __forceinline BuildTask (BVH4::NodeRef* dst, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo, const GeneralSplit& split, const NAABBox3fa& bounds)
         : dst(dst), depth(depth), tris(tris), beziers(beziers), pinfo(pinfo), split(split), nodeBounds(bounds) {}
 
+      __forceinline BuildTask (BVH4::NodeRef* dst, size_t depth, TriRefList& tris, const PrimInfo& pinfo, const GeneralSplit& split, const NAABBox3fa& bounds)
+        : dst(dst), depth(depth), tris(tris), pinfo(pinfo), split(split), nodeBounds(bounds) {}
+
     public:
       __forceinline friend bool operator< (const BuildTask& a, const BuildTask& b) {
         return area(a.pinfo.geomBounds) < area(b.pinfo.geomBounds);
       //  return a.pinfo.size() < b.pinfo.size();
         }
-
-      /*! execute single task and create subtasks */
-      void process(size_t threadIndex, BVH4Builder2* builder, BuildTask task_o[BVH4::N], size_t& N);
-
-      /*! recursive build function for aligned and non-aligned bounds */
-      void recurse(size_t threadIndex, BVH4Builder2* builder);
       
     public:
       BVH4::NodeRef* dst;
@@ -152,6 +149,7 @@ namespace embree
 
   public:
 
+    static const PrimInfo computePrimInfo(TriRefList& triangles);
     static const PrimInfo computePrimInfo(BezierRefList& beziers);
     static const PrimInfo computePrimInfo(TriRefList& tris, BezierRefList& beziers);
 
@@ -181,9 +179,17 @@ namespace embree
     NodeRef leaf   (size_t threadIndex, size_t depth, BezierRefList& prims, const PrimInfo& pinfo);
     NodeRef leaf   (size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo);
 
-    void heuristic(PrimInfo& pinfo, TriRefList& tris, BezierRefList& beziers, GeneralSplit& split, const NAABBox3fa& nodeBounds);
-
+    void computeSplit(PrimInfo& pinfo, TriRefList& tris, BezierRefList& beziers, GeneralSplit& split, const NAABBox3fa& nodeBounds);
+    void computeSplit(PrimInfo& pinfo, TriRefList& tris, GeneralSplit& split);
+    
     TASK_RUN_FUNCTION(BVH4Builder2,task_build_parallel);
+    
+    /*! execute single task and create subtasks */
+    void processTrianglesAndBeziers(size_t threadIndex, BuildTask& task, BuildTask task_o[BVH4::N], size_t& N);
+    void processTriangles(size_t threadIndex, BuildTask& task, BuildTask task_o[BVH4::N], size_t& N);
+
+    /*! recursive build function for aligned and non-aligned bounds */
+    void recurseTask(size_t threadIndex, BuildTask& task);
 
   private:
     BuildSource* source;      //!< build source interface

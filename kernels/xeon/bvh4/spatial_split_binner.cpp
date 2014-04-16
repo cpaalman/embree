@@ -21,6 +21,30 @@ namespace embree
 {
   extern Scene* g_scene; // FIXME: remove me
 
+  SpatialSplit::SpatialSplit(TriRefList& tris, float triCost)
+    : triCost(triCost), bezierCost(0)
+  {
+    /* calculate geometry bounds */
+    geomBounds = empty;
+    for (TriRefList::block_iterator_unsafe i=tris; i; i++)
+      geomBounds.extend(i->bounds());
+
+    /* calculate binning function */
+    ofs  = (ssef) geomBounds.lower;
+    diag = (ssef) geomBounds.size();
+    scale = select(diag != 0.0f,rcp(diag) * ssef(BINS * 0.99f),ssef(0.0f));
+
+    /* initialize bins */
+    for (size_t i=0; i<BINS; i++) {
+      bounds[i][0] = bounds[i][1] = bounds[i][2] = bounds[i][3] = empty;
+      numTriBegin[i] = numTriEnd[i] = 0;
+      numBezierBegin[i] = numBezierEnd[i] = 0;
+    }
+
+    bin(tris);
+    best();
+  }
+
   SpatialSplit::SpatialSplit(TriRefList& tris, float triCost, BezierRefList& beziers, float bezierCost)
     : triCost(triCost), bezierCost(bezierCost)
   {
