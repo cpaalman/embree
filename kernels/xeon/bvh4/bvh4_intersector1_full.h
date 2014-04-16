@@ -84,6 +84,12 @@ namespace embree
                                                const size_t nearX, const size_t nearY, const size_t nearZ, ssef& tNear, ssef& tFar);
       static size_t intersectBox(const BVH4::UUNode* node, Ray& ray, const sse3f& org, const sse3f& dir, ssef& tNear, ssef& tFar);
       static size_t intersectBox(const BVH4::CUNode* node, Ray& ray, const sse3f& org, const sse3f& dir, ssef& tNear, ssef& tFar);
+
+#if defined(__AVX__)
+    static size_t intersectBox(const BVH4::UUNode* node, Ray& ray, 
+                                      const avx3f& ray_org_dir, const sse3f& ray_org, const sse3f& ray_dir, 
+                                      ssef& tNear, ssef& tFar);
+#endif
       
     public:
       static void intersect(const BVH4* This, Ray& ray);

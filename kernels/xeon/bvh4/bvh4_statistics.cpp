@@ -20,7 +20,8 @@ namespace embree
 {
   BVH4Statistics::BVH4Statistics (BVH4* bvh) : bvh(bvh)
   {
-    numNodes = depth = 0;
+    depth = 0;
+    numUANodes = numUUNodes = numCANodes = numCUNodes = 0;
     for (size_t i=0; i<4; i++) numLeaves[i] = numPrimBlocks[i] = numPrims[i] = 0;
     bvhSAH = leafSAH = 0.0f;
     statistics(bvh->root,safeArea(bvh->bounds),depth);
@@ -31,7 +32,11 @@ namespace embree
 
   size_t BVH4Statistics::bytesUsed()
   {
-    size_t bytesNodes = numNodes*sizeof(Node);
+    size_t bytesUANodes = numUANodes*sizeof(BVH4::UANode);
+    size_t bytesUUNodes = numUUNodes*sizeof(BVH4::UUNode);
+    size_t bytesCANodes = numCANodes*sizeof(BVH4::CANode);
+    size_t bytesCUNodes = numCUNodes*sizeof(BVH4::CUNode);
+    size_t bytesNodes = bytesUANodes + bytesUUNodes + bytesCANodes + bytesCUNodes;
     size_t bytesPrims = 0;
     for (size_t i=0; i<4; i++)
       bytesPrims += numPrimBlocks[i]*(bvh->primTy[i] ? bvh->primTy[i]->bytes : 0);
@@ -43,7 +48,11 @@ namespace embree
   std::string BVH4Statistics::str()  
   {
     std::ostringstream stream;
-    size_t bytesNodes = numNodes*sizeof(Node);
+    size_t bytesUANodes = numUANodes*sizeof(BVH4::UANode);
+    size_t bytesUUNodes = numUUNodes*sizeof(BVH4::UUNode);
+    size_t bytesCANodes = numCANodes*sizeof(BVH4::CANode);
+    size_t bytesCUNodes = numCUNodes*sizeof(BVH4::CUNode);
+    size_t bytesNodes = bytesUANodes + bytesUUNodes + bytesCANodes + bytesCUNodes;
     size_t bytesPrim[4]; memset(bytesPrim,0,sizeof(bytesPrim));
     size_t bytesPrims = 0;
     size_t numLeavesTotal = 0;
@@ -68,11 +77,22 @@ namespace embree
     stream << ", depth = " << depth << std::endl;
     stream << "  used = " << bytesTotal/1E6 << " MB, allocated = " << bytesTotalAllocated/1E6 << " MB, perPrimitive = " << double(bytesTotal)/double(bvh->numPrimitives) << " B" << std::endl;
     stream.precision(1);
-    stream << "  nodes = "  << numNodes << " "
-           << "(" << bytesNodes/1E6  << " MB) "
-           << "(" << 100.0*double(bytesNodes)/double(bytesTotal) << "% of total) "
-           << "(" << 100.0*(numNodes-1+numLeavesTotal)/(BVH4::N*numNodes) << "% used)" 
+    stream << "  UANodes = "  << numUANodes << " "
+           << "(" << bytesUANodes/1E6  << " MB) "
+           << "(" << 100.0*double(bytesUANodes)/double(bytesTotal) << "% of total) " 
            << std::endl;
+    stream << "  UUNodes = "  << numUUNodes << " "
+           << "(" << bytesUUNodes/1E6  << " MB) "
+           << "(" << 100.0*double(bytesUUNodes)/double(bytesTotal) << "% of total) " 
+           << std::endl;
+    /*stream << "  CANodes = "  << numCANodes << " "
+           << "(" << bytesCANodes/1E6  << " MB) "
+           << "(" << 100.0*double(bytesCANodes)/double(bytesTotal) << "% of total) " 
+           << std::endl;
+    stream << "  CUNodes = "  << numCUNodes << " "
+           << "(" << bytesCUNodes/1E6  << " MB) "
+           << "(" << 100.0*double(bytesCUNodes)/double(bytesTotal) << "% of total) "
+           << std::endl;*/
     for (size_t i=0; i<4; i++) {
       if (!bvh->primTy[i]) continue;
       stream << "  " << bvh->primTy[i]->name << " leaves = " << numLeaves[i] << " "
@@ -93,7 +113,6 @@ namespace embree
   {
     if (node.isNode())
     {
-      numNodes++;
       BVH4::Node* n = node.getNode();
       for (size_t i=0; i<BVH4::N; i++) {
         if (n->child(i) == BVH4::emptyNode) {
@@ -108,6 +127,7 @@ namespace embree
 
     if (node.isUANode())
     {
+      numUANodes++;
       depth = 0;
       size_t cdepth = 0;
       BVH4::UANode* n = node.getUANode();
@@ -120,6 +140,7 @@ namespace embree
     }
     else if (node.isUUNode())
     {
+      numUUNodes++;
       depth = 0;
       size_t cdepth = 0;
       BVH4::UUNode* n = node.getUUNode();

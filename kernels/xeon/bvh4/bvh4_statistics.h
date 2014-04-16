@@ -43,7 +43,10 @@ namespace embree
     BVH4* bvh;
     float bvhSAH;                      //!< SAH cost of the BVH4.
     float leafSAH;                     //!< SAH cost of the BVH4.
-    size_t numNodes;                   //!< Number of internal nodes.
+    size_t numUANodes;                   //!< Number of internal nodes.
+    size_t numUUNodes;                   //!< Number of internal nodes.
+    size_t numCANodes;                   //!< Number of internal nodes.
+    size_t numCUNodes;                   //!< Number of internal nodes.
     size_t numLeaves[4];               //!< Number of leaf nodes.
     size_t numPrimBlocks[4];           //!< Number of primitive blocks.
     size_t numPrims[4];                //!< Number of primitives.

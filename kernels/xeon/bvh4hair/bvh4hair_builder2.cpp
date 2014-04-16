@@ -332,12 +332,12 @@ namespace embree
       }
     }
     //assert(bestArea != (float)inf); // FIXME: can get raised if all selected curves are points
-#ifdef DEBUG
+/*#ifdef DEBUG
     if (bestArea == (float)inf)
       {
         std::cout << "WARNING: bestArea == (float)inf" << std::endl; 
       }
-#endif
+      #endif*/
 
     bestBounds.upper.w = bestArea;
     return NAABBox3fa(bestSpace,bestBounds);
