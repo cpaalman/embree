@@ -51,7 +51,8 @@ namespace embree
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
 
-  BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(TriRefList& triangles) 
+  BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(TriRefList& triangles, float triCost) 
+    : triCost(triCost), bezierCost(0.0f)
   {
     add(triangles);
     setup_binning();
@@ -59,7 +60,8 @@ namespace embree
     best();
   }
 
-  BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(TriRefList& triangles, BezierRefList& beziers) 
+  BVH4Builder2::ObjectSplitBinner::ObjectSplitBinner(TriRefList& triangles, float triCost, BezierRefList& beziers, float bezierCost) 
+    : triCost(triCost), bezierCost(bezierCost)
   {
     add(triangles);
     add(beziers);
@@ -191,7 +193,8 @@ namespace embree
   void BVH4Builder2::ObjectSplitBinner::best()
   {
     Vec3fa rAreas [maxBins];      //!< area of bounds of primitives on the right
-    Vec3ia rCounts[maxBins];      //!< blocks of primitives on the right
+    Vec3ia rTriCounts[maxBins];      //!< blocks of primitives on the right
+    Vec3ia rBezierCounts[maxBins];      //!< blocks of primitives on the right
     
     /* sweep from right to left and compute parallel prefix of merged bounds */
     assert(mapping.size() > 0);
@@ -201,7 +204,8 @@ namespace embree
     {
       triCount += triCounts[i];
       bezierCount += bezierCounts[i];
-      rCounts[i] = blocks(triCount) + bezierCount;
+      rTriCounts[i] = triCount;
+      rBezierCounts[i] = bezierCount;
       bx = merge(bx,geomBounds[i][0]); rAreas[i][0] = halfArea(bx);
       by = merge(by,geomBounds[i][1]); rAreas[i][1] = halfArea(by);
       bz = merge(bz,geomBounds[i][2]); rAreas[i][2] = halfArea(bz);
@@ -217,11 +221,11 @@ namespace embree
       bx = merge(bx,geomBounds[i-1][0]); float Ax = halfArea(bx);
       by = merge(by,geomBounds[i-1][1]); float Ay = halfArea(by);
       bz = merge(bz,geomBounds[i-1][2]); float Az = halfArea(bz);
-      const Vec3ia lCount = blocks(triCount) + bezierCount;
-      const Vec3ia rCount = rCounts[i];
       const Vec3fa lArea = Vec3fa(Ax,Ay,Az);
       const Vec3fa rArea = rAreas[i];
-      const Vec3fa sah = lArea*Vec3fa(lCount) + rArea*Vec3fa(rCount);
+      const Vec3fa triSAH    = lArea*Vec3fa(blocks(triCount)) + rArea*Vec3fa(blocks(rTriCounts[i]));
+      const Vec3fa bezierSAH = lArea*Vec3fa(bezierCount     ) + rArea*Vec3fa(rBezierCounts[i]     );
+      const Vec3fa sah = triCost*triSAH + bezierCost*bezierSAH;
       bestPos = select(lt_mask(sah,bestSAH),ii ,bestPos);
       bestSAH = select(lt_mask(sah,bestSAH),sah,bestSAH);
     }
@@ -305,8 +309,8 @@ namespace embree
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
 
-  BVH4Builder2::ObjectSplitBinnerUnaligned::ObjectSplitBinnerUnaligned(const LinearSpace3fa& space, TriRefList& triangles) 
-    : space(space)
+  BVH4Builder2::ObjectSplitBinnerUnaligned::ObjectSplitBinnerUnaligned(const LinearSpace3fa& space, TriRefList& triangles, float triCost) 
+    : space(space), triCost(triCost), bezierCost(0.0f)
   {
     add(triangles);
     setup_binning();
@@ -314,8 +318,9 @@ namespace embree
     best();
   }
 
-  BVH4Builder2::ObjectSplitBinnerUnaligned::ObjectSplitBinnerUnaligned(const LinearSpace3fa& space, TriRefList& triangles, BezierRefList& beziers) 
-    : space(space)
+  BVH4Builder2::ObjectSplitBinnerUnaligned::ObjectSplitBinnerUnaligned(const LinearSpace3fa& space, 
+                                                                       TriRefList& triangles, float triCost, BezierRefList& beziers, float bezierCost) 
+    : space(space), triCost(triCost), bezierCost(bezierCost)
   {
     add(triangles);
     add(beziers);
@@ -447,7 +452,8 @@ namespace embree
   void BVH4Builder2::ObjectSplitBinnerUnaligned::best()
   {
     Vec3fa rAreas [maxBins];      //!< area of bounds of primitives on the right
-    Vec3ia rCounts[maxBins];      //!< blocks of primitives on the right
+    Vec3ia rTriCounts[maxBins];      //!< blocks of primitives on the right
+    Vec3ia rBezierCounts[maxBins];      //!< blocks of primitives on the right
     
     /* sweep from right to left and compute parallel prefix of merged bounds */
     assert(mapping.size() > 0);
@@ -457,7 +463,8 @@ namespace embree
     {
       triCount += triCounts[i];
       bezierCount += bezierCounts[i];
-      rCounts[i] = blocks(triCount) + bezierCount;
+      rTriCounts[i] = triCount;
+      rBezierCounts[i] = bezierCount;
       bx = merge(bx,geomBounds[i][0]); rAreas[i][0] = halfArea(bx);
       by = merge(by,geomBounds[i][1]); rAreas[i][1] = halfArea(by);
       bz = merge(bz,geomBounds[i][2]); rAreas[i][2] = halfArea(bz);
@@ -473,11 +480,11 @@ namespace embree
       bx = merge(bx,geomBounds[i-1][0]); float Ax = halfArea(bx);
       by = merge(by,geomBounds[i-1][1]); float Ay = halfArea(by);
       bz = merge(bz,geomBounds[i-1][2]); float Az = halfArea(bz);
-      const Vec3ia lCount = blocks(triCount) + bezierCount;
-      const Vec3ia rCount = rCounts[i];
       const Vec3fa lArea = Vec3fa(Ax,Ay,Az);
       const Vec3fa rArea = rAreas[i];
-      const Vec3fa sah = lArea*Vec3fa(lCount) + rArea*Vec3fa(rCount);
+      const Vec3fa triSAH    = lArea*Vec3fa(blocks(triCount)) + rArea*Vec3fa(blocks(rTriCounts[i]));
+      const Vec3fa bezierSAH = lArea*Vec3fa(bezierCount     ) + rArea*Vec3fa(rBezierCounts[i]     );
+      const Vec3fa sah = triCost*triSAH + bezierCost*bezierSAH;
       bestPos = select(lt_mask(sah,bestSAH),ii ,bestPos);
       bestSAH = select(lt_mask(sah,bestSAH),sah,bestSAH);
     }
@@ -562,7 +569,8 @@ namespace embree
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
 
-  BVH4Builder2::SpatialSplit::SpatialSplit(TriRefList& tris, BezierRefList& beziers)
+  BVH4Builder2::SpatialSplit::SpatialSplit(TriRefList& tris, float triCost, BezierRefList& beziers, float bezierCost)
+    : triCost(triCost), bezierCost(bezierCost)
   {
     /* calculate geometry bounds */
     geomBounds = empty;
@@ -665,13 +673,15 @@ namespace embree
     {
       /* sweep from right to left and compute parallel prefix of merged bounds */
       ssef rAreas[BINS];
-      ssei rCounts[BINS];
+      ssei rTriCounts[BINS];
+      ssei rBezierCounts[BINS];
       ssei triCount = 0, bezierCount = 0; BBox3fa bx = empty; BBox3fa by = empty; BBox3fa bz = empty;
       for (size_t i=BINS-1; i>0; i--)
     {
       triCount += numTriEnd[i];
       bezierCount += numBezierEnd[i];
-      rCounts[i] = blocks(triCount) + bezierCount;
+      rTriCounts[i] = triCount;
+      rBezierCounts[i] = bezierCount;
       bx.extend(bounds[i][0]); rAreas[i][0] = halfArea(bx);
       by.extend(bounds[i][1]); rAreas[i][1] = halfArea(by);
       bz.extend(bounds[i][2]); rAreas[i][2] = halfArea(bz);
@@ -689,9 +699,9 @@ namespace embree
       bz.extend(bounds[i-1][2]); float Az = halfArea(bz);
       const ssef lArea = ssef(Ax,Ay,Az,Az);
       const ssef rArea = rAreas[i];
-      const ssei lCount = blocks(triCount) + bezierCount;
-      const ssei rCount = rCounts[i];
-      const ssef sah = lArea*ssef(lCount) + rArea*ssef(rCount);
+      const ssef triSAH    = lArea*ssef(blocks(triCount)) + rArea*ssef(blocks(rTriCounts[i]));
+      const ssef bezierSAH = lArea*ssef(bezierCount     ) + rArea*ssef(rBezierCounts[i]     );
+      const ssef sah = triCost*triSAH + bezierCost*bezierSAH;
       bestPos  = select(sah < bestSAH,ii ,bestPos);
       bestSAH  = select(sah < bestSAH,sah,bestSAH);
     }
@@ -855,7 +865,7 @@ namespace embree
   ///////////////////////////////////////////////////////////////////////////////
   ///////////////////////////////////////////////////////////////////////////////
 
-  BVH4Builder2::ObjectTypePartitioning::ObjectTypePartitioning (TriRefList& tris, BezierRefList& beziers)
+  BVH4Builder2::ObjectTypePartitioning::ObjectTypePartitioning (TriRefList& tris, float triCost, BezierRefList& beziers, float bezierCost)
   {
     PrimInfo pinfo;
     pinfo.num = 0;
@@ -899,7 +909,7 @@ namespace embree
     pinfo.centBounds.extend(bezierCentBounds);
 
     if (pinfo.numTriangles != 0 && pinfo.numBeziers != 0)
-      split.cost = blocks(pinfo.numTriangles)*safeHalfArea(triGeomBounds) + pinfo.numBeziers*safeHalfArea(bezierGeomBounds);
+      split.cost = blocks(pinfo.numTriangles)*triCost*safeHalfArea(triGeomBounds) + pinfo.numBeziers*bezierCost*safeHalfArea(bezierGeomBounds);
     else 
       split.cost = inf;
   }
@@ -1302,21 +1312,23 @@ namespace embree
   void BVH4Builder2::heuristic(TriRefList& tris, BezierRefList& beziers, GeneralSplit& split)
   {
     float bestSAH = inf;
+    const float triCost = 1.0f; // FIXME:
+    const float bezierCost = BVH4::intCost; // FIXME:
 
-    ObjectTypePartitioning object_type(tris,beziers);
+    ObjectTypePartitioning object_type(tris,triCost,beziers,bezierCost);
     bestSAH = min(bestSAH,object_type.split.splitSAH());
 
-    ObjectSplitBinner object_binning_aligned(tris,beziers);
+    ObjectSplitBinner object_binning_aligned(tris,triCost,beziers,bezierCost);
     bestSAH = min(bestSAH,object_binning_aligned.split.splitSAH());
 
     //bool enableSpatialSplits = false;
     bool enableSpatialSplits = remainingSpatialSplits > 0;
-    SpatialSplit spatial_binning_aligned(tris,beziers);
+    SpatialSplit spatial_binning_aligned(tris,triCost,beziers,bezierCost);
     if (enableSpatialSplits) 
       bestSAH = min(bestSAH,spatial_binning_aligned.split.splitSAH());
     
     const LinearSpace3fa hairspace = computeHairSpace(beziers);
-    ObjectSplitBinnerUnaligned object_binning_unaligned(hairspace,tris,beziers);
+    ObjectSplitBinnerUnaligned object_binning_unaligned(hairspace,tris,triCost,beziers,bezierCost);
     bestSAH = min(bestSAH,object_binning_unaligned.split.splitSAH());
     
     //SpatialBinning spatial_binning_unaligned(tris,beziers,hairspace);
@@ -1459,8 +1471,8 @@ namespace embree
     /*! compute leaf and split cost */
     //const float leafSAH  = /*primTy.intCost*/pinfo.leafSAH ();
     //const float splitSAH = /*primTy.intCost*/split.splitSAH() + BVH4::travCost*halfArea(pinfo.geomBounds);
-    const float leafSAH  = BVH4::intCost*pinfo.leafSAH ();
-    const float splitSAH = BVH4::intCost*split.splitSAH() + BVH4::travCostAligned*halfArea(nodeBounds.bounds);//pinfo.geomBounds);
+    const float leafSAH  = pinfo.leafSAH (1.0f,BVH4::intCost);
+    const float splitSAH = split.splitSAH() + BVH4::travCostAligned*halfArea(nodeBounds.bounds);//pinfo.geomBounds);
     //assert(split.size() == 0 || leafSAH >= 0 && splitSAH >= 0);
 
     /*! create a leaf node when threshold reached or SAH tells us to stop */
@@ -1484,7 +1496,7 @@ namespace embree
       ssize_t bestChild = -1;
       for (size_t i=0; i<numChildren; i++) 
       {
-        float dSAH = csplit[i].splitSAH()-cpinfo[i].leafSAH();
+        float dSAH = csplit[i].splitSAH()-cpinfo[i].leafSAH(1.0f,BVH4::intCost);
         if (cpinfo[i].size() <= builder->minLeafSize) continue; 
         if (cpinfo[i].size() > builder->maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
         if (dSAH <= bestSAH) { bestChild = i; bestSAH = dSAH; }
@@ -1542,103 +1554,6 @@ namespace embree
     for (size_t i=0; i<numChildren; i++) 
       tasks[i].recurse(threadIndex,builder);
   }
-
-#if 0
-  void BVH4Builder2::processTask(size_t threadIndex, BuildTask& task, BuildTask task_o[BVH4::N], size_t& numTasks_o)
-  {
-    /* create enforced leaf */
-    if (task.pinfo.size() <= minLeafSize || task.depth >= BVH4::maxBuildDepth || task.split.splitSAH() == float(inf)) {
-      *task.dst = leaf(threadIndex,task.depth,task.beziers,task.pinfo);
-      numTasks_o = 0;
-      return;
-    }
-
-    /*! initialize child list */
-    bool isAligned = true;
-    BezierRefList cprims[BVH4::N];
-    PrimInfo cpinfo[BVH4::N];
-    GeneralSplit csplit[BVH4::N];
-    cprims[0] = task.beziers;
-    cpinfo[0] = task.pinfo;
-    size_t numChildren = 1;
-    
-    /*! split until node is full or SAH tells us to stop */
-    do {
-      
-      /*! find best child to split */
-      float bestArea = neg_inf; 
-      ssize_t bestChild = -1;
-      for (size_t i=0; i<numChildren; i++) 
-      {
-        size_t N = BezierRefList::block_iterator_unsafe(cprims[i]).size(); // FIXME: slow
-        float A = embree::area(cpinfo[i].geomBounds);
-        if (N <= minLeafSize) continue;  
-        if (A > bestArea) { bestChild = i; bestArea = A; }
-      }
-      if (bestChild == -1) break;
-
-      /*! split selected child */
-      isAligned &= csplit[bestChild].aligned;
-      BezierRefList lbeziers,rbeziers; csplit[bestChild].split(threadIndex,&allocBezierRefs,cprims[bestChild],lbeziers,rbeziers);
-      PrimInfo linfo = computePrimInfo(lbeziers);
-      PrimInfo rinfo = computePrimInfo(rbeziers);
-      TriRefList tris;
-      GeneralSplit lsplit; heuristic(tris,lbeziers,lsplit);
-      GeneralSplit rsplit; heuristic(tris,rbeziers,rsplit);
-      cprims[numChildren] = rbeziers; cpinfo[numChildren] = rinfo; csplit[numChildren] = rsplit;
-      cprims[bestChild  ] = lbeziers; cpinfo[bestChild  ] = linfo; csplit[bestChild  ] = lsplit;
-      numChildren++;
-      
-    } while (numChildren < BVH4::N);
-
-    /* create aligned node */
-    if (isAligned) 
-    {
-      BVH4::UANode* node = bvh->allocUANode(threadIndex);
-
-      BBox3fa bounds = empty;
-      NAABBox3fa abounds[BVH4::N];
-      for (size_t i=0; i<numChildren; i++) {
-        abounds[i] = computeAlignedBounds(cprims[i]);
-        bounds.extend(abounds[i].bounds);
-      }
-
-      for (ssize_t i=0; i<numChildren; i++) {
-        node->set(i,abounds[i].bounds);
-	//const NAABBox3fa ubounds = computeUnalignedBounds(cprims[i]);
-        TriRefList tris;
-        new (&task_o[i]) BuildTask(&node->child(i),task.depth+1,tris,cprims[i],cpinfo[i],csplit[i]);
-        //task_o[i].makeleaf = isleaf[i];
-      }
-      numTasks_o = numChildren;
-      *task.dst = bvh->encodeNode(node);
-    }
-    
-    /* create unaligned node */
-    else {
-      BVH4::UUNode* node = bvh->allocUUNode(threadIndex);
-      for (ssize_t i=numChildren-1; i>=0; i--) {
-        const NAABBox3fa ubounds = computeUnalignedBounds(cprims[i]);
-        //node->set(i,cbounds[i]);
-        node->set(i,ubounds);
-        TriRefList tris;
-        new (&task_o[i]) BuildTask(&node->child(i),task.depth+1,tris,cprims[i],cpinfo[i],csplit[i]);
-        //task_o[i].makeleaf = isleaf[i];
-      }
-      numTasks_o = numChildren;
-      *task.dst = bvh->encodeNode(node);
-    }
-  }
-
-  void BVH4Builder2::recurseTask(size_t threadIndex, BuildTask& task)
-  {
-    size_t numChildren;
-    BuildTask tasks[BVH4::N];
-    processTask(threadIndex,task,tasks,numChildren);
-    for (size_t i=0; i<numChildren; i++) 
-      recurseTask(threadIndex,tasks[i]);
-  }
-#endif
 
   void BVH4Builder2::task_build_parallel(size_t threadIndex, size_t threadCount, size_t taskIndex, size_t taskCount, TaskScheduler::Event* event) 
   {

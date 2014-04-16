@@ -64,8 +64,8 @@ namespace embree
         return num; 
       }
 
-      __forceinline float leafSAH() const { 
-        return halfArea(geomBounds)*(blocks(numTriangles) + numBeziers); 
+      __forceinline float leafSAH(float triCost, float bezierCost) const { 
+        return halfArea(geomBounds)*(triCost*blocks(numTriangles) + bezierCost*numBeziers); 
       }
 
     public:
@@ -141,8 +141,8 @@ namespace embree
     };
     
     /*! default constructor */
-    ObjectSplitBinner (TriRefList& prims);
-    ObjectSplitBinner (TriRefList& prims, BezierRefList& beziers);
+    ObjectSplitBinner (TriRefList& prims, float triCost);
+    ObjectSplitBinner (TriRefList& prims, float triCost, BezierRefList& beziers, float bezierCost);
   
   private:
 
@@ -178,6 +178,8 @@ namespace embree
     BBox3fa geomBounds[maxBins][4]; 
 
     Split split;
+    float triCost;
+    float bezierCost;
   };
 
     class ObjectSplitBinnerUnaligned
@@ -213,8 +215,8 @@ namespace embree
     };
     
     /*! default constructor */
-    ObjectSplitBinnerUnaligned (const LinearSpace3fa& space, TriRefList& prims);
-    ObjectSplitBinnerUnaligned (const LinearSpace3fa& space, TriRefList& prims, BezierRefList& beziers);
+    ObjectSplitBinnerUnaligned (const LinearSpace3fa& space, TriRefList& prims, float triCost);
+    ObjectSplitBinnerUnaligned (const LinearSpace3fa& space, TriRefList& prims, float triCost, BezierRefList& beziers, float bezierCost);
   
   private:
 
@@ -251,6 +253,8 @@ namespace embree
     BBox3fa geomBounds[maxBins][4]; 
 
     Split split;
+    float triCost;
+    float bezierCost;
   };
 
     struct SpatialSplit
@@ -260,7 +264,7 @@ namespace embree
 
     public:
 
-      SpatialSplit (/*const LinearSpace3fa& space,*/ TriRefList& tris, BezierRefList& beziers);
+      SpatialSplit (TriRefList& tris, float triCost, BezierRefList& beziers, float bezierCost);
 
       class Split
       {
@@ -305,12 +309,14 @@ namespace embree
     ssei    numBezierEnd[BINS];
 
       //const LinearSpace3fa space;
+      float triCost;
+      float bezierCost;
     };
 
   class ObjectTypePartitioning
   {
   public:
-    ObjectTypePartitioning (TriRefList& prims, BezierRefList& beziers);
+    ObjectTypePartitioning (TriRefList& prims, float triCost, BezierRefList& beziers, float bezierCost);
 
   public:
     class Split 
@@ -329,6 +335,8 @@ namespace embree
 
   public:
     Split split;
+    float triCost;
+    float bezierCost;
   };
     
     class __aligned(16) GeneralSplit
