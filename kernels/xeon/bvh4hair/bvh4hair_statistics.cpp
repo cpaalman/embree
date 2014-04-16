@@ -23,9 +23,9 @@ namespace embree
     numAlignedNodes = numUnalignedNodes = numLeaves = numPrims = depth = 0;
     childrenAlignedNodes = childrenUnalignedNodes = 0;
     bvhSAH = 0.0f;
-    float A = max(0.0f,halfArea(bvh->bounds));
+    float A = safeArea(bvh->bounds);
     statistics(bvh->root,A,depth);
-    bvhSAH /= area(bvh->bounds);
+    bvhSAH /= A;
     assert(depth <= BVH4Hair::maxDepth);
   }
 
@@ -82,7 +82,7 @@ namespace embree
       depth = 0;
       for (size_t i=0; i<BVH4Hair::N; i++) {
         if (n->child(i) != BVH4Hair::emptyNode) childrenAlignedNodes++;
-        const float Ai = max(0.0f,halfArea(n->extend(i)));
+        const float Ai = safeArea(n->extend(i));
         size_t cdepth; statistics(n->child(i),Ai,cdepth); 
         depth=max(depth,cdepth);
       }
@@ -97,7 +97,7 @@ namespace embree
       depth = 0;
       for (size_t i=0; i<BVH4Hair::N; i++) {
         if (n->child(i) != BVH4Hair::emptyNode) childrenUnalignedNodes++;
-        const float Ai = max(0.0f,halfArea(n->extend(i)));
+        const float Ai = safeArea(n->extend(i));
         size_t cdepth; statistics(n->child(i),Ai,cdepth); 
         depth=max(depth,cdepth);
       }

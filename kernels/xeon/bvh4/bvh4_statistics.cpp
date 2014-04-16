@@ -24,9 +24,10 @@ namespace embree
     numUANodes = numUUNodes = numCANodes = numCUNodes = 0;
     for (size_t i=0; i<4; i++) numLeaves[i] = numPrimBlocks[i] = numPrims[i] = 0;
     bvhSAH = leafSAH = 0.0f;
-    statistics(bvh->root,safeArea(bvh->bounds),depth);
-    bvhSAH /= area(bvh->bounds);
-    leafSAH /= area(bvh->bounds);
+    float A = safeArea(bvh->bounds);
+    statistics(bvh->root,A,depth);
+    bvhSAH /= A;
+    leafSAH /= A;
     assert(depth <= BVH4::maxDepth);
   }
 
@@ -131,7 +132,8 @@ namespace embree
       depth = 0;
       size_t cdepth = 0;
       BVH4::UANode* n = node.getUANode();
-      bvhSAH += A*BVH4::travCost;
+      //bvhSAH += A*BVH4::travCost;
+      bvhSAH += A*BVH4::travCostAligned;
       for (size_t i=0; i<BVH4::N; i++) {
         statistics(n->child(i),safeArea(n->bounds(i)),cdepth); 
         depth=max(depth,cdepth);
@@ -144,7 +146,7 @@ namespace embree
       depth = 0;
       size_t cdepth = 0;
       BVH4::UUNode* n = node.getUUNode();
-      bvhSAH += A*BVH4::travCost;
+      bvhSAH += A*BVH4::travCostUnaligned;
       for (size_t i=0; i<BVH4::N; i++) {
         statistics(n->child(i),safeArea(n->extend(i)),cdepth); 
         depth=max(depth,cdepth);
@@ -163,7 +165,8 @@ namespace embree
       for (size_t i=0; i<num; i++) {
         numPrims[ty] += bvh->primTy[ty]->size(tri+i*bvh->primTy[ty]->bytes);
       }
-      float sah = A * bvh->primTy[ty]->intCost * num;
+      //float sah = A * bvh->primTy[ty]->intCost * num;
+      float sah = A * BVH4::intCost * num;
       bvhSAH += sah;
       leafSAH += sah;
     }
