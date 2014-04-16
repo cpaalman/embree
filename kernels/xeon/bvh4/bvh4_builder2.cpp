@@ -1331,9 +1331,6 @@ namespace embree
     ObjectSplitBinnerUnaligned object_binning_unaligned(hairspace,tris,triCost,beziers,bezierCost);
     bestSAH = min(bestSAH,object_binning_unaligned.split.splitSAH());
     
-    //SpatialBinning spatial_binning_unaligned(tris,beziers,hairspace);
-    //bestSAH = min(bestSAH,spatial_binning_unaligned.split.splitSAH());
-
     if (bestSAH == float(inf))
       new (&split) GeneralSplit(object_binning_aligned.pinfo.size());
     else if (bestSAH == object_binning_aligned.split.splitSAH())
@@ -1344,8 +1341,6 @@ namespace embree
     }
     else if (bestSAH == object_binning_unaligned.split.splitSAH())
       new (&split) GeneralSplit(object_binning_unaligned.split);
-    //else if (bestSAH == spatial_binning_unaligned.split.splitSAH())
-    //new (&split) GeneralSplit(spatial_binning_unaligned.split,false);
     else if (bestSAH == object_type.split.splitSAH()) {
       new (&split) GeneralSplit(object_type.split);
     }
@@ -1467,12 +1462,9 @@ namespace embree
   //typename BVH4Builder2::NodeRef BVH4Builder2::recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo, const GeneralSplit& split)
   void BVH4Builder2::BuildTask::process(size_t threadIndex, BVH4Builder2* builder, BuildTask task_o[BVH4::N], size_t& N)
   {
-    //if (depth > 30) PRINT2(depth,pinfo.size());
     /*! compute leaf and split cost */
-    //const float leafSAH  = /*primTy.intCost*/pinfo.leafSAH ();
-    //const float splitSAH = /*primTy.intCost*/split.splitSAH() + BVH4::travCost*halfArea(pinfo.geomBounds);
     const float leafSAH  = pinfo.leafSAH (1.0f,BVH4::intCost);
-    const float splitSAH = split.splitSAH() + BVH4::travCostAligned*halfArea(nodeBounds.bounds);//pinfo.geomBounds);
+    const float splitSAH = split.splitSAH() + BVH4::travCostAligned*halfArea(nodeBounds.bounds);
     //assert(split.size() == 0 || leafSAH >= 0 && splitSAH >= 0);
 
     /*! create a leaf node when threshold reached or SAH tells us to stop */
@@ -1583,7 +1575,6 @@ namespace embree
         size_t numChildren;
         BuildTask ctasks[BVH4::N];
         task.process(threadIndex,this,ctasks,numChildren);
-        //processTask(threadIndex,task,ctasks,numChildren);
         taskMutex.lock();
         for (size_t i=0; i<numChildren; i++) {
           atomic_add(&numActiveTasks,+1);

@@ -302,13 +302,11 @@ namespace embree
       ssef scale;
 
     BBox3fa bounds[BINS][4];
-      //float   areas [BINS][4];
     ssei    numTriBegin[BINS];
     ssei    numTriEnd[BINS];
     ssei    numBezierBegin[BINS];
     ssei    numBezierEnd[BINS];
 
-      //const LinearSpace3fa space;
       float triCost;
       float bezierCost;
     };
@@ -329,7 +327,6 @@ namespace embree
       void split(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims);
 
     public:
-      //PrimInfo pinfo;
       float cost;
     };
 
@@ -352,37 +349,25 @@ namespace embree
 
       __forceinline GeneralSplit(const ObjectSplitBinner::Split& split, bool aligned_in) {
         type = OBJECT_SPLIT; aligned = aligned_in;
-        //leaf_sah = split.leafSAH();
         split_sah = split.splitSAH();
-        //halfAreaGeomBounds = halfArea(split.pinfo.geomBounds);
-        //num = split.pinfo.size();
         new (data) ObjectSplitBinner::Split(split);
       }
 
       __forceinline GeneralSplit(const ObjectSplitBinnerUnaligned::Split& split) {
         type = OBJECT_SPLIT_UNALIGNED; aligned = false;
-        //leaf_sah = split.leafSAH();
         split_sah = split.splitSAH();
-        //halfAreaGeomBounds = halfArea(split.pinfo.geomBounds);
-        //num = split.pinfo.size();
         new (data) ObjectSplitBinnerUnaligned::Split(split);
       }
 
       __forceinline GeneralSplit(const SpatialSplit::Split& split, bool aligned_in) {
         type = SPATIAL_SPLIT; aligned = aligned_in;
-        //leaf_sah = split.leafSAH();
         split_sah = split.splitSAH();
-        //halfAreaGeomBounds = halfArea(split.pinfo.geomBounds);
-        //num = split.pinfo.size();
         new (data) SpatialSplit::Split(split);
       }
 
       __forceinline GeneralSplit(const ObjectTypePartitioning::Split& split) {
         type = TYPE_SPLIT; aligned = true;
-        //leaf_sah = split.leafSAH();
         split_sah = split.splitSAH();
-        //halfAreaGeomBounds = halfArea(split.pinfo.geomBounds);
-        //num = split.pinfo.size();
         new (data) ObjectTypePartitioning::Split(split);
       }
 
@@ -408,15 +393,11 @@ namespace embree
         }
       }
 
-      //__forceinline float leafSAH () const { return leaf_sah; }
       __forceinline float splitSAH() const { return split_sah; }
-      //__forceinline size_t size() const { return num; }
       
-      //float halfAreaGeomBounds;
       bool aligned;
     private:
       Type type;
-      //float leaf_sah;
       float split_sah;
       size_t num;
       __aligned(16) char data[256];
@@ -431,12 +412,9 @@ namespace embree
         : dst(dst), depth(depth), tris(tris), beziers(beziers), pinfo(pinfo), split(split), nodeBounds(bounds) {}
 
     public:
-      //__forceinline friend bool operator< (const BuildTask& a, const BuildTask& b) {
-      //  return a.pinfo.size() < b.pinfo.size();
-      //}
-
       __forceinline friend bool operator< (const BuildTask& a, const BuildTask& b) {
         return area(a.pinfo.geomBounds) < area(b.pinfo.geomBounds);
+      //  return a.pinfo.size() < b.pinfo.size();
         }
 
       /*! execute single task and create subtasks */
@@ -456,11 +434,6 @@ namespace embree
     };
 
   public:
-
-    const NAABBox3fa computeUnalignedBounds(BezierRefList& prims);
-
-    void processTask(size_t threadIndex, BuildTask& task, BuildTask task_o[BVH4::N], size_t& numTasks_o);
-    void recurseTask(size_t threadIndex, BuildTask& task);
 
     static const PrimInfo computePrimInfo(BezierRefList& beziers);
     static const PrimInfo computePrimInfo(TriRefList& tris, BezierRefList& beziers);
@@ -490,7 +463,6 @@ namespace embree
     NodeRef leaf   (size_t threadIndex, size_t depth, TriRefList& prims   , const PrimInfo& pinfo);
     NodeRef leaf   (size_t threadIndex, size_t depth, BezierRefList& prims, const PrimInfo& pinfo);
     NodeRef leaf   (size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo);
-    //NodeRef recurse(size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo, const GeneralSplit& split);
 
     void heuristic(TriRefList& tris, BezierRefList& beziers, GeneralSplit& split);
 
