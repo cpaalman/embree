@@ -302,10 +302,10 @@ namespace embree
       ssef scale;
 
     BBox3fa bounds[BINS][4];
-    ssei    numTriBegin[BINS];
-    ssei    numTriEnd[BINS];
-    ssei    numBezierBegin[BINS];
-    ssei    numBezierEnd[BINS];
+    Vec3ia    numTriBegin[BINS];
+    Vec3ia    numTriEnd[BINS];
+    Vec3ia    numBezierBegin[BINS];
+    Vec3ia    numBezierEnd[BINS];
 
       float triCost;
       float bezierCost;
@@ -478,9 +478,6 @@ namespace embree
     size_t maxLeafSize;                 //!< maximal size of a leaf
     PrimRefBlockAlloc<Bezier1> allocBezierRefs;                 //!< Allocator for primitive blocks
     PrimRefBlockAlloc<PrimRef> allocTriRefs;                 //!< Allocator for primitive blocks
-
-    /*! Compute the number of blocks occupied for each dimension. */
-    __forceinline static ssei blocks(const ssei& a) { return (a+ssei((1 << logBlockSize)-1)) >> logBlockSize; } // FIXME: only use Vec3ia type
 
     /*! Compute the number of blocks occupied for each dimension. */
     __forceinline static Vec3ia blocks(const Vec3ia& a) { return (a+Vec3ia((1 << logBlockSize)-1)) >> logBlockSize; }

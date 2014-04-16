@@ -672,10 +672,10 @@ namespace embree
     void BVH4Builder2::SpatialSplit::best()
     {
       /* sweep from right to left and compute parallel prefix of merged bounds */
-      ssef rAreas[BINS];
-      ssei rTriCounts[BINS];
-      ssei rBezierCounts[BINS];
-      ssei triCount = 0, bezierCount = 0; BBox3fa bx = empty; BBox3fa by = empty; BBox3fa bz = empty;
+      Vec3fa rAreas[BINS];
+      Vec3ia rTriCounts[BINS];
+      Vec3ia rBezierCounts[BINS];
+      Vec3ia triCount = 0, bezierCount = 0; BBox3fa bx = empty; BBox3fa by = empty; BBox3fa bz = empty;
       for (size_t i=BINS-1; i>0; i--)
     {
       triCount += numTriEnd[i];
@@ -688,7 +688,7 @@ namespace embree
     }
     
     /* sweep from left to right and compute SAH */
-    ssei ii = 1; ssef bestSAH = pos_inf; ssei bestPos = 0;
+    Vec3ia ii = 1; Vec3fa bestSAH = pos_inf; Vec3ia bestPos = 0;
     triCount = 0; bezierCount = 0; bx = empty; by = empty; bz = empty;
     for (size_t i=1; i<BINS; i++, ii+=1)
     {
@@ -697,13 +697,13 @@ namespace embree
       bx.extend(bounds[i-1][0]); float Ax = halfArea(bx);
       by.extend(bounds[i-1][1]); float Ay = halfArea(by);
       bz.extend(bounds[i-1][2]); float Az = halfArea(bz);
-      const ssef lArea = ssef(Ax,Ay,Az,Az);
-      const ssef rArea = rAreas[i];
-      const ssef triSAH    = lArea*ssef(blocks(triCount)) + rArea*ssef(blocks(rTriCounts[i]));
-      const ssef bezierSAH = lArea*ssef(bezierCount     ) + rArea*ssef(rBezierCounts[i]     );
-      const ssef sah = triCost*triSAH + bezierCost*bezierSAH;
-      bestPos  = select(sah < bestSAH,ii ,bestPos);
-      bestSAH  = select(sah < bestSAH,sah,bestSAH);
+      const Vec3fa lArea = Vec3fa(Ax,Ay,Az);
+      const Vec3fa rArea = rAreas[i];
+      const Vec3fa triSAH    = lArea*Vec3fa(blocks(triCount)) + rArea*Vec3fa(blocks(rTriCounts[i]));
+      const Vec3fa bezierSAH = lArea*Vec3fa(bezierCount     ) + rArea*Vec3fa(rBezierCounts[i]     );
+      const Vec3fa sah = triCost*triSAH + bezierCost*bezierSAH;
+      bestPos  = select(lt_mask(sah,bestSAH),ii ,bestPos);
+      bestSAH  = select(lt_mask(sah,bestSAH),sah,bestSAH);
     }
     
     /* find best dimension */
@@ -1130,51 +1130,6 @@ namespace embree
       #endif*/
 
     return bestSpace;
-  }
-
-  const NAABBox3fa BVH4Builder2::computeUnalignedBounds(BezierRefList& prims)
-  {
-    size_t N = BezierRefList::block_iterator_unsafe(prims).size();
-    if (N == 0)
-      return NAABBox3fa(empty); // FIXME: can cause problems with compression
-
-    float bestArea = inf;
-    LinearSpace3fa bestSpace = one;
-    BBox3fa bestBounds = empty;
-
-    size_t k=0;
-    for (BezierRefList::block_iterator_unsafe i = prims; i; i++)
-    {
-      if ((k++) % ((N+3)/4)) continue;
-      //size_t k = begin + rand() % (end-begin);
-      const Vec3fa axis = normalize(i->p3 - i->p0);
-      if (length(i->p3 - i->p0) < 1E-9) continue;
-      const LinearSpace3fa space0 = LinearSpace3fa::rotate(Vec3fa(0,0,1),2.0f*float(pi)*drand48())*frame(axis).transposed();
-      const LinearSpace3fa space = clamp(space0);
-      BBox3fa bounds = empty;
-      float area = 0.0f;
-      for (BezierRefList::block_iterator_unsafe j = prims; j; j++) {
-        const BBox3fa cbounds = j->bounds(space);
-        area += embree::area(cbounds);
-        bounds.extend(cbounds);
-      }
-
-      if (area <= bestArea) {
-        bestBounds = bounds;
-        bestSpace = space;
-        bestArea = area;
-      }
-    }
-    //assert(bestArea != (float)inf); // FIXME: can get raised if all selected curves are points
-/*#ifdef DEBUG
-    if (bestArea == (float)inf)
-      {
-        std::cout << "WARNING: bestArea == (float)inf" << std::endl; 
-      }
-      #endif*/
-
-    bestBounds.upper.w = bestArea;
-    return NAABBox3fa(bestSpace,bestBounds);
   }
 
   void BVH4Builder2::build(size_t threadIndex, size_t threadCount) 
