@@ -14,9 +14,6 @@
 // limitations under the License.                                           //
 // ======================================================================== //
 
-#define BVH4HAIR_COMPRESS_ALIGNED_NODES 0
-#define BVH4HAIR_COMPRESS_UNALIGNED_NODES 0
-
 #include "bvh4.h"
 #include "bvh4_builder_hair.h"
 #include "bvh4_statistics.h"
@@ -26,6 +23,13 @@ namespace embree
 {
   extern double g_hair_builder_replication_factor;
   
+#define NAVI(x) 
+#if BVH4HAIR_NAVIGATION
+  extern BVH4::NodeRef rootNode;
+  extern BVH4::NodeRef naviNode;
+  extern std::vector<BVH4::NodeRef> naviStack;
+#endif
+
   /*! scales orthonormal transformation into the range -127 to +127 */
   __forceinline const LinearSpace3fa compressTransform(const LinearSpace3fa& xfm)
   {
@@ -82,6 +86,7 @@ namespace embree
   {
     /* fast path for empty BVH */
     size_t numPrimitives = scene->numCurves << enablePreSubdivision;
+    //bvh->init(numPrimitives,numPrimitives+(size_t)(g_hair_builder_replication_factor*numPrimitives));
     bvh->init(numPrimitives+(size_t)(g_hair_builder_replication_factor*numPrimitives));
     if (numPrimitives == 0) return;
     numGeneratedPrims = 0;
@@ -102,7 +107,7 @@ namespace embree
       PRINT(enableStrandSplits);
       PRINT(enablePreSubdivision);
 
-      std::cout << "building " << bvh->name() + " using BVH4BuilderHair ..." << std::flush;
+      std::cout << "building BVH4<> using BVH4BuilderHair ..." << std::flush;
       t0 = getSeconds();
     }
 
@@ -133,10 +138,9 @@ namespace embree
 
     bvh->numPrimitives = scene->numCurves;
     bvh->numVertices = 0;
-    if (bvh->primTy[0] == &SceneBezier1i::type) bvh->numVertices = numVertices;
+    //if (&bvh->primTy == &SceneBezier1i::type) bvh->numVertices = numVertices; // FIXME
 
     /* start recursive build */
-    PRINT(g_hair_builder_replication_factor);
     remainingReplications = g_hair_builder_replication_factor*numPrimitives;
     const NAABBox3fa ubounds = computeUnalignedBounds(prims);
     BuildTask task(&bvh->root,0,numPrimitives,false,prims,ubounds);
@@ -151,6 +155,10 @@ namespace embree
     TaskScheduler::executeTask(threadIndex,threadCount,_task_build_parallel,this,threadCount,"BVH4Builder2::build_parallel");
 #endif
     
+    NAVI(naviNode = bvh->root);
+    NAVI(rootNode = bvh->root);
+    NAVI(naviStack.push_back(bvh->root));
+
     if (g_verbose >= 2) {
       double t1 = getSeconds();
       std::cout << " [DONE]" << std::endl;
@@ -868,8 +876,8 @@ namespace embree
     size_t numGeneratedPrimsOld = atomic_add(&numGeneratedPrims,N); 
     if (numGeneratedPrimsOld%10000 > (numGeneratedPrimsOld+N)%10000) std::cout << "." << std::flush; 
     //assert(N <= (size_t)BVH4::maxLeafBlocks);
-    if (bvh->primTy[1] == &Bezier1Type::type) { 
-      Bezier1* leaf = (Bezier1*) bvh->allocPrimitiveBlocks(threadIndex,0,N);
+    if (bvh->primTy[1] == &Bezier1Type::type) {
+      Bezier1* leaf = (Bezier1*) bvh->allocPrimitiveBlocks(threadIndex,1,N);
       atomic_set<PrimRefBlock>::block_iterator_unsafe iter(prims);
       for (size_t i=0; i<N; i++) { leaf[i] = *iter; iter++; }
       assert(!iter);
@@ -881,7 +889,7 @@ namespace embree
       return bvh->encodeLeaf((char*)leaf,N,1);
     } 
     else if (bvh->primTy[1] == &SceneBezier1i::type) {
-      Bezier1i* leaf = (Bezier1i*) bvh->allocPrimitiveBlocks(threadIndex,0,N);
+      Bezier1i* leaf = (Bezier1i*) bvh->allocPrimitiveBlocks(threadIndex,1,N);
       atomic_set<PrimRefBlock>::block_iterator_unsafe iter(prims);
       for (size_t i=0; i<N; i++) {
         const Bezier1& curve = *iter; iter++;
@@ -1149,3 +1157,4 @@ namespace embree
     return new BVH4BuilderHair(accel,scene);
   }
 }
+

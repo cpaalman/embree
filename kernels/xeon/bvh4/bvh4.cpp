@@ -306,7 +306,10 @@ namespace embree
     Accel::Intersectors intersectors = BVH4Triangle4Bezier1Intersectors(accel);
 
     Builder* builder = NULL;
-    if      (g_builder == "default") builder = BVH4BuilderObjectSplit4(accel,&scene->flat_triangle_source_1,scene,1,inf);
+    if      (g_builder == "default") 
+//builder = BVH4BuilderHair_(accel,scene);
+builder = BVH4Builder2ObjectSplit4(accel,&scene->flat_triangle_source_1,scene,1,inf);
+//builder = BVH4BuilderObjectSplit4(accel,&scene->flat_triangle_source_1,scene,1,inf);
     else if (g_builder == "tris"   ) builder = BVH4BuilderObjectSplit4(accel,&scene->flat_triangle_source_1,scene,1,inf);
     else if (g_builder == "hair"   ) builder = BVH4BuilderHair_(accel,scene);
     else if (g_builder == "full"   ) builder = BVH4BuilderFull_(accel,scene);

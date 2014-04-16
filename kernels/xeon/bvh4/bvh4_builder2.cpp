@@ -1276,8 +1276,8 @@ namespace embree
     ObjectSplitBinner object_binning_aligned(tris,triCost,beziers,bezierCost);
     bestSAH = min(bestSAH,object_binning_aligned.split.splitSAH());
 
-    //bool enableSpatialSplits = false;
-    bool enableSpatialSplits = remainingSpatialSplits > 0;
+    bool enableSpatialSplits = false;
+    //bool enableSpatialSplits = remainingSpatialSplits > 0;
     SpatialSplit spatial_binning_aligned(tris,triCost,beziers,bezierCost);
     if (enableSpatialSplits) 
       bestSAH = min(bestSAH,spatial_binning_aligned.split.splitSAH());

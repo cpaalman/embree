@@ -25,7 +25,7 @@
 #endif
 
 #define TFAR(x) x
-#define NTFAR(x) 
+#define NTFAR(x)  
 
 namespace embree
 { 
@@ -451,7 +451,8 @@ namespace embree
 
 #if defined(__AVX__)
     typedef Select2Intersector1<Triangle4Intersector1MoellerTrumbore, Bezier1Intersector1> Triangle4Bezier1Intersector1;
-    DEFINE_INTERSECTOR1(BVH4Triangle4Bezier1Intersector1,BVH4Intersector1Full<Triangle4Bezier1Intersector1>);
+    //DEFINE_INTERSECTOR1(BVH4Triangle4Bezier1Intersector1,BVH4Intersector1Full<Triangle4Bezier1Intersector1>);
+    DEFINE_INTERSECTOR1(BVH4Triangle4Bezier1Intersector1,BVH4Intersector1Full<Bezier1Intersector1>);
 
     DEFINE_INTERSECTOR1(BVH4Bezier1Intersector1,BVH4Intersector1Full<Bezier1Intersector1>);
     DEFINE_INTERSECTOR1(BVH4Bezier1iIntersector1,BVH4Intersector1Full<Bezier1iIntersector1>);

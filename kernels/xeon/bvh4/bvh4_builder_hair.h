@@ -366,3 +366,4 @@ namespace embree
     std::vector<BuildTask> tasks;
   };
 }
+

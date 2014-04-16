@@ -22,6 +22,8 @@
 #include "common/scene.h"
 #include "geometry/primitive.h"
 
+#define NEW_ENCODING 0
+
 namespace embree
 {
   /*! Multi BVH with 4 children. Each node stores the bounding box of
@@ -49,19 +51,27 @@ namespace embree
 
     /*! node types */
     static const size_t tyUA = 0;  //!< uncompressed axis aligned node
-    static const size_t tyCA = 1;  //!< compressed axis aligned node
-    static const size_t tyUU = 2;  //!< uncompressed unaligned node
+    static const size_t tyUU = 1;  //!< uncompressed unaligned node
+    static const size_t tyCA = 2;  //!< compressed axis aligned node
     static const size_t tyCU = 3;  //!< compressed unaligned node
     static const size_t tyL0 = 4;  //!< first leaf node type
     static const size_t maxLeafTypes = 4;             //!< maximal number of leaf types
 
     /*! Empty node */
+#if NEW_ENCODING
     static const size_t emptyNode = 0x0000000000000004LL;
+#else
     //static const size_t emptyNode = 0x0000000000000001LL;
+    static const size_t emptyNode = 0x0000000000000002LL;
+#endif
 
     /*! Invalid node, used as marker in traversal */
+#if NEW_ENCODING
     static const size_t invalidNode = 0x0FFFFFFFFFFFFFF4LL;
+#else
     //static const size_t invalidNode = 0xFFFFFFFFFFFFFFF1LL;
+    static const size_t invalidNode = 0xFFFFFFFFFFFFFFF2LL;
+#endif
 
     /*! Maximal depth of the BVH. */
     static const size_t maxBuildDepth = 32;
@@ -69,8 +79,13 @@ namespace embree
     static const size_t maxDepth = maxBuildDepthLeaf+maxBuildDepthLeaf+maxBuildDepth;
     
     /*! Maximal number of primitive blocks in a leaf. */
+#if NEW_ENCODING
     //static const size_t maxLeafBlocks = 15;
     static const size_t maxLeafBlocks = 6;
+#else
+    //static const size_t maxLeafBlocks = 6;
+    static const size_t maxLeafBlocks = 5;
+#endif
 
     /*! Cost of one traversal step. */
     static const int travCost = 1; // FIXME: remove
@@ -92,8 +107,13 @@ namespace embree
 
        /*! Prefetches the node this reference points to */
       __forceinline void prefetch() const {
+#if NEW_ENCODING
 	prefetchL1(((char*)(ptr & ~deco_mask))+0*64);
 	prefetchL1(((char*)(ptr & ~deco_mask))+1*64);
+#else
+	prefetchL1(((char*)(ptr))+0*64);
+	prefetchL1(((char*)(ptr))+1*64);
+#endif
       }
 
       /*! Sets the barrier bit. */
@@ -106,12 +126,20 @@ namespace embree
       __forceinline bool isBarrier() const { return ptr & barrier_mask; }
 
       /*! checks if this is a leaf */
+#if NEW_ENCODING
       __forceinline bool isLeaf() const { return (ptr & type_mask) >= tyL0; }
+#else
       //__forceinline bool isLeaf() const { return (ptr & type_mask) != 0; }
+      __forceinline bool isLeaf() const { return (ptr & type_mask) > tyUU; }
+#endif
 
       /*! checks if this is a node */
+#if NEW_ENCODING
       __forceinline bool isNode() const { return (ptr & type_mask) < tyL0; }
+#else
       //__forceinline bool isNode() const { return (ptr & type_mask) == 0; }
+      __forceinline bool isNode() const { return (ptr & type_mask) <= tyUU; }
+#endif
       
       /*! checks for different node types */
       __forceinline bool isUANode() const { return (ptr & type_mask) == tyUA; }
@@ -142,13 +170,18 @@ namespace embree
       /*! returns leaf pointer */
       __forceinline char* getLeaf(size_t& num, size_t& type) const {
         assert(isLeaf());
+#if NEW_ENCODING
         num  = ptr >> 60;
         type = (ptr & type_mask) - tyL0;
         return (char*)(ptr & ~deco_mask);
         //return (char*)(((ptr >> 4) << 8) >> 4); //~deco_mask);
+#else
         //num = (ptr & type_mask)-1;
+        num = (ptr & type_mask)-2;
         //type = 0;
-        //return (char*)(ptr & ~type_mask);
+        type = 1;
+        return (char*)(ptr & ~type_mask);
+#endif
       }
 
     private:
@@ -662,8 +695,12 @@ namespace embree
     __forceinline NodeRef encodeLeaf(char* tri, size_t num, size_t type) {
       assert(((size_t)tri & deco_mask) == 0); 
       assert(type < maxLeafTypes);
+#if NEW_ENCODING
       return NodeRef((size_t)tri | (tyL0 + type) | (min(num,maxLeafBlocks) << 60));
+#else
       //return NodeRef((size_t)tri | (1+min(num,maxLeafBlocks)));
+      return NodeRef((size_t)tri | (2+min(num,maxLeafBlocks)));
+#endif
     }
 
   public:
