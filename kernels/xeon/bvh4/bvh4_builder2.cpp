@@ -1229,7 +1229,7 @@ namespace embree
       }
     }
     PrimInfo pinfo = computePrimInfo(tris,beziers);
-    GeneralSplit split; heuristic(tris,beziers,split);
+    GeneralSplit split; heuristic(tris,beziers,split,pinfo.geomBounds);
 
     /* perform binning */
     bvh->numPrimitives = numPrimitives;
@@ -1265,39 +1265,44 @@ namespace embree
     }
   }
 
-  void BVH4Builder2::heuristic(TriRefList& tris, BezierRefList& beziers, GeneralSplit& split)
+  void BVH4Builder2::heuristic(TriRefList& tris, BezierRefList& beziers, GeneralSplit& split, const NAABBox3fa& nodeBounds)
   {
     float bestSAH = inf;
     const float triCost = 1.0f; // FIXME:
     const float bezierCost = BVH4::intCost; // FIXME:
 
     ObjectTypePartitioning object_type(tris,triCost,beziers,bezierCost);
-    bestSAH = min(bestSAH,object_type.split.splitSAH());
+    float object_type_split_sah = object_type.split.splitSAH() + BVH4::travCostAligned*halfArea(nodeBounds.bounds);
+    bestSAH = min(bestSAH,object_type_split_sah);
 
     ObjectSplitBinner object_binning_aligned(tris,triCost,beziers,bezierCost);
-    bestSAH = min(bestSAH,object_binning_aligned.split.splitSAH());
+    float object_binning_aligned_sah = object_binning_aligned.split.splitSAH() + BVH4::travCostAligned*halfArea(nodeBounds.bounds);;
+    bestSAH = min(bestSAH,object_binning_aligned_sah);
 
     bool enableSpatialSplits = false;
     //bool enableSpatialSplits = remainingSpatialSplits > 0;
     SpatialSplit spatial_binning_aligned(tris,triCost,beziers,bezierCost);
+    float spatial_binning_aligned_sah = spatial_binning_aligned.split.splitSAH() + BVH4::travCostAligned*halfArea(nodeBounds.bounds);;
     if (enableSpatialSplits) 
-      bestSAH = min(bestSAH,spatial_binning_aligned.split.splitSAH());
+      bestSAH = min(bestSAH,spatial_binning_aligned_sah );
     
     const LinearSpace3fa hairspace = computeHairSpace(beziers);
+    
     ObjectSplitBinnerUnaligned object_binning_unaligned(hairspace,tris,triCost,beziers,bezierCost);
-    bestSAH = min(bestSAH,object_binning_unaligned.split.splitSAH());
+    float object_binning_unaligned_sah = object_binning_unaligned.split.splitSAH() + BVH4::travCostUnaligned*halfArea(nodeBounds.bounds);;
+    bestSAH = min(bestSAH,object_binning_unaligned_sah);
     
     if (bestSAH == float(inf))
       new (&split) GeneralSplit(object_binning_aligned.pinfo.size());
-    else if (bestSAH == object_binning_aligned.split.splitSAH())
+    else if (bestSAH == object_binning_aligned_sah)
       new (&split) GeneralSplit(object_binning_aligned.split,true);
-    else if (enableSpatialSplits && bestSAH == spatial_binning_aligned.split.splitSAH()) {
+    else if (enableSpatialSplits && bestSAH == spatial_binning_aligned_sah) {
       new (&split) GeneralSplit(spatial_binning_aligned.split,true);
       atomic_add(&remainingSpatialSplits,-spatial_binning_aligned.split.numSpatialSplits);
     }
-    else if (bestSAH == object_binning_unaligned.split.splitSAH())
+    else if (bestSAH == object_binning_unaligned_sah)
       new (&split) GeneralSplit(object_binning_unaligned.split);
-    else if (bestSAH == object_type.split.splitSAH()) {
+    else if (bestSAH == object_type_split_sah) {
       new (&split) GeneralSplit(object_type.split);
     }
     else
@@ -1458,8 +1463,8 @@ namespace embree
       BezierRefList lbeziers,rbeziers; csplit[bestChild].split(threadIndex,&builder->allocBezierRefs,cbeziers[bestChild],lbeziers,rbeziers);
       PrimInfo linfo = computePrimInfo(ltris,lbeziers);
       PrimInfo rinfo = computePrimInfo(rtris,rbeziers);
-      GeneralSplit lsplit; builder->heuristic(ltris,lbeziers,lsplit);
-      GeneralSplit rsplit; builder->heuristic(rtris,rbeziers,rsplit);
+      GeneralSplit lsplit; builder->heuristic(ltris,lbeziers,lsplit,linfo.geomBounds); // FIXME: ,linfo.geomBounds not correct
+      GeneralSplit rsplit; builder->heuristic(rtris,rbeziers,rsplit,rinfo.geomBounds);
       ctris[bestChild  ] = ltris; cbeziers[bestChild  ] = lbeziers; cpinfo[bestChild] = linfo; csplit[bestChild  ] = lsplit;
       ctris[numChildren] = rtris; cbeziers[numChildren] = rbeziers; cpinfo[numChildren] = rinfo; csplit[numChildren] = rsplit;
       numChildren++;

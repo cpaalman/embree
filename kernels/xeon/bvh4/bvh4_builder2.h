@@ -464,7 +464,7 @@ namespace embree
     NodeRef leaf   (size_t threadIndex, size_t depth, BezierRefList& prims, const PrimInfo& pinfo);
     NodeRef leaf   (size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo);
 
-    void heuristic(TriRefList& tris, BezierRefList& beziers, GeneralSplit& split);
+    void heuristic(TriRefList& tris, BezierRefList& beziers, GeneralSplit& split, const NAABBox3fa& nodeBounds);
 
     TASK_RUN_FUNCTION(BVH4Builder2,task_build_parallel);
 
