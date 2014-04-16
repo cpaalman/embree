@@ -347,7 +347,7 @@ namespace embree
       }
     }
     PrimInfo pinfo = computePrimInfo(tris,beziers);
-    GeneralSplit split; heuristic(tris,beziers,split,pinfo.geomBounds);
+    GeneralSplit split; heuristic(pinfo,tris,beziers,split,pinfo.geomBounds);
 
     /* perform binning */
     bvh->numPrimitives = numPrimitives;
@@ -383,7 +383,7 @@ namespace embree
     }
   }
 
-  void BVH4Builder2::heuristic(TriRefList& tris, BezierRefList& beziers, GeneralSplit& split, const NAABBox3fa& nodeBounds)
+  void BVH4Builder2::heuristic(PrimInfo& pinfo, TriRefList& tris, BezierRefList& beziers, GeneralSplit& split, const NAABBox3fa& nodeBounds)
   {
     float bestSAH = inf;
     const float triCost = 1.0f; // FIXME:
@@ -392,13 +392,21 @@ namespace embree
     ObjectTypePartitioning object_type(tris,triCost,beziers,bezierCost);
     float object_type_split_sah = object_type.split.splitSAH() + BVH4::travCostAligned*halfArea(nodeBounds.bounds);
     bestSAH = min(bestSAH,object_type_split_sah);
+
+    StrandSplit strand_split;
+    float strand_split_sah = inf;
+    if (pinfo.numTriangles == 0 && pinfo.numBeziers > 0) {
+      strand_split.find(beziers,bezierCost);
+      strand_split_sah = strand_split.split.splitSAH() + BVH4::travCostUnaligned*halfArea(nodeBounds.bounds);
+      bestSAH = min(bestSAH,strand_split_sah);
+    }
     
     ObjectSplitBinner object_binning_aligned(tris,triCost,beziers,bezierCost);
     float object_binning_aligned_sah = object_binning_aligned.split.splitSAH() + BVH4::travCostAligned*halfArea(nodeBounds.bounds);;
     bestSAH = min(bestSAH,object_binning_aligned_sah);
 
-    //bool enableSpatialSplits = false;
-    bool enableSpatialSplits = remainingSpatialSplits > 0;
+    bool enableSpatialSplits = false;
+    //bool enableSpatialSplits = remainingSpatialSplits > 0;
     SpatialSplit spatial_binning_aligned(tris,triCost,beziers,bezierCost);
     float spatial_binning_aligned_sah = spatial_binning_aligned.split.splitSAH() + BVH4::travCostAligned*halfArea(nodeBounds.bounds);;
     if (enableSpatialSplits) 
@@ -412,6 +420,8 @@ namespace embree
     
     if (bestSAH == float(inf))
       new (&split) GeneralSplit(object_binning_aligned.pinfo.size());
+    else if (bestSAH == strand_split_sah)
+      new (&split) GeneralSplit(strand_split.split);
     else if (bestSAH == object_binning_aligned_sah)
       new (&split) GeneralSplit(object_binning_aligned.split,true);
     else if (enableSpatialSplits && bestSAH == spatial_binning_aligned_sah) {
@@ -581,8 +591,8 @@ namespace embree
       BezierRefList lbeziers,rbeziers; csplit[bestChild].split(threadIndex,&builder->allocBezierRefs,cbeziers[bestChild],lbeziers,rbeziers);
       PrimInfo linfo = computePrimInfo(ltris,lbeziers);
       PrimInfo rinfo = computePrimInfo(rtris,rbeziers);
-      GeneralSplit lsplit; builder->heuristic(ltris,lbeziers,lsplit,linfo.geomBounds); // FIXME: ,linfo.geomBounds not correct
-      GeneralSplit rsplit; builder->heuristic(rtris,rbeziers,rsplit,rinfo.geomBounds);
+      GeneralSplit lsplit; builder->heuristic(linfo,ltris,lbeziers,lsplit,linfo.geomBounds); // FIXME: ,linfo.geomBounds not correct
+      GeneralSplit rsplit; builder->heuristic(rinfo,rtris,rbeziers,rsplit,rinfo.geomBounds);
       ctris[bestChild  ] = ltris; cbeziers[bestChild  ] = lbeziers; cpinfo[bestChild] = linfo; csplit[bestChild  ] = lsplit;
       ctris[numChildren] = rtris; cbeziers[numChildren] = rbeziers; cpinfo[numChildren] = rinfo; csplit[numChildren] = rsplit;
       numChildren++;

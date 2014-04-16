@@ -20,6 +20,7 @@
 #include "object_binner_unaligned.h"
 #include "spatial_split_binner.h"
 #include "object_type_partition.h"
+#include "strand_split.h"
 
 namespace embree
 {
@@ -46,7 +47,7 @@ namespace embree
     
     class __aligned(16) GeneralSplit
     {
-      enum Type { OBJECT_SPLIT, OBJECT_SPLIT_UNALIGNED, SPATIAL_SPLIT, TYPE_SPLIT, FALLBACK_SPLIT };
+      enum Type { OBJECT_SPLIT, OBJECT_SPLIT_UNALIGNED, SPATIAL_SPLIT, TYPE_SPLIT, FALLBACK_SPLIT, STRAND_SPLIT };
 
     public:
 
@@ -54,6 +55,12 @@ namespace embree
 
       __forceinline GeneralSplit (size_t N) 
         : type(FALLBACK_SPLIT), aligned(true), split_sah(inf), num(N) {}
+
+      __forceinline GeneralSplit(const StrandSplit::Split& split) {
+        type = STRAND_SPLIT; aligned = false;
+        split_sah = split.splitSAH();
+        new (data) StrandSplit::Split(split);
+      }
 
       __forceinline GeneralSplit(const ObjectSplitBinner::Split& split, bool aligned_in) {
         type = OBJECT_SPLIT; aligned = aligned_in;
@@ -82,6 +89,7 @@ namespace embree
       __forceinline void split(size_t threadIndex, PrimRefBlockAlloc<PrimRef>* alloc, TriRefList& prims, TriRefList& lprims, TriRefList& rprims) 
       {
         switch (type) {
+        case STRAND_SPLIT   :  break;  // FIXME: should clear prims array?       
         case OBJECT_SPLIT : ((ObjectSplitBinner::Split* )data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
         case OBJECT_SPLIT_UNALIGNED : ((ObjectSplitBinnerUnaligned::Split* )data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
         case SPATIAL_SPLIT: ((SpatialSplit::Split*)data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
@@ -93,6 +101,7 @@ namespace embree
       void split(size_t threadIndex, PrimRefBlockAlloc<Bezier1>* alloc, BezierRefList& prims, BezierRefList& lprims, BezierRefList& rprims)
       {
         switch (type) {
+        case STRAND_SPLIT   : ((StrandSplit::Split*   )data)->split(threadIndex,alloc,prims,lprims,rprims); break;         
         case OBJECT_SPLIT : ((ObjectSplitBinner::Split* )data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
         case OBJECT_SPLIT_UNALIGNED : ((ObjectSplitBinnerUnaligned::Split* )data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
         case SPATIAL_SPLIT: ((SpatialSplit::Split*)data)->split(threadIndex,alloc,prims,lprims,rprims); break;          
@@ -172,7 +181,7 @@ namespace embree
     NodeRef leaf   (size_t threadIndex, size_t depth, BezierRefList& prims, const PrimInfo& pinfo);
     NodeRef leaf   (size_t threadIndex, size_t depth, TriRefList& tris, BezierRefList& beziers, const PrimInfo& pinfo);
 
-    void heuristic(TriRefList& tris, BezierRefList& beziers, GeneralSplit& split, const NAABBox3fa& nodeBounds);
+    void heuristic(PrimInfo& pinfo, TriRefList& tris, BezierRefList& beziers, GeneralSplit& split, const NAABBox3fa& nodeBounds);
 
     TASK_RUN_FUNCTION(BVH4Builder2,task_build_parallel);
 
