@@ -120,6 +120,10 @@ IF (TARGET_AVX)
   bvh4/bvh4_builder2.cpp             # FIXME: should be in SSE2 section
   bvh4/bvh4_builder_full.cpp       # FIXME: should be in SSE2 section
   bvh4/bvh4_builder_hair.cpp       # FIXME: should be in SSE2 section
+  bvh4/object_binner.cpp
+  bvh4/object_binner_unaligned.cpp
+  bvh4/spatial_split_binner.cpp
+  bvh4/object_type_partition.cpp
 
    geometry/triangle8.cpp
    geometry/ispc_wrapper_avx.cpp

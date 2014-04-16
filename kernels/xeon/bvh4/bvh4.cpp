@@ -102,6 +102,7 @@ namespace embree
     /* select intersectors1 */
     SELECT_SYMBOL_AVX_AVX2              (features,BVH4Triangle4Bezier1Intersector1);
     SELECT_SYMBOL_AVX_AVX2              (features,BVH4Bezier1iIntersector1);
+    SELECT_SYMBOL_AVX_AVX2              (features,BVH4Bezier1Intersector1);
     SELECT_SYMBOL_DEFAULT_SSE41_AVX_AVX2(features,BVH4Triangle1Intersector1Moeller);
     SELECT_SYMBOL_DEFAULT_SSE41_AVX_AVX2(features,BVH4Triangle4Intersector1Moeller);
     SELECT_SYMBOL_AVX_AVX2              (features,BVH4Triangle8Intersector1Moeller);
@@ -173,6 +174,7 @@ namespace embree
     Accel::Intersectors intersectors;
     intersectors.ptr = bvh;
     intersectors.intersector1 = BVH4Triangle4Bezier1Intersector1;
+    //intersectors.intersector1 = BVH4Bezier1Intersector1;
     intersectors.intersector4 = NULL;
     intersectors.intersector8 = NULL;
     intersectors.intersector16 = NULL;

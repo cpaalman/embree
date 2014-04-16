@@ -26,20 +26,14 @@
 
 #define TFAR(x) x
 #define NTFAR(x)  
-#define NAVI(x)
 
 namespace embree
 { 
   namespace isa
   {
-#if 1
+#if 0
 
 #if defined(__AVX__)
-
-#if BVH4HAIR_NAVIGATION
-  extern BVH4::NodeRef naviNode;
-  extern ssize_t naviDepth;
-#endif
 
     template<typename PrimitiveIntersector>
     __forceinline size_t BVH4Intersector1Full<PrimitiveIntersector>::intersectBox(const BVH4::UANode* node, 
@@ -65,7 +59,7 @@ namespace embree
       const ssef tFarZ  = (bounds.upper.z - org.z) * rdir.z;
 #endif
       
-#if ((BVH4HAIR_WIDTH == 4) && defined(__SSE4_1__) || (BVH4HAIR_WIDTH == 8) && defined(__AVX2__))
+#if defined(__SSE4_1__)
       tNear = maxi(maxi(tNearX,tNearY),maxi(tNearZ,tNear));
       tFar  = mini(mini(tFarX ,tFarY ),mini(tFarZ ,tFar));
       const sseb vmask = cast(tNear) > cast(tFar);
@@ -127,7 +121,7 @@ namespace embree
 #endif
 #endif
       
-#if ((BVH4HAIR_WIDTH == 4) && defined(__SSE4_1__) || (BVH4HAIR_WIDTH == 8) && defined(__AVX2__))
+#if defined(__SSE4_1__)
       const ssef tNearX = mini(tLowerXYZ.x,tUpperXYZ.x);
       const ssef tNearY = mini(tLowerXYZ.y,tUpperXYZ.y);
       const ssef tNearZ = mini(tLowerXYZ.z,tUpperXYZ.z);
@@ -163,10 +157,8 @@ namespace embree
       StackItem* stackPtr = stack+1;        //!< current stack pointer
       StackItem* stackEnd = stack+stackSize;
       stack[0].ref = bvh->root;
-      NAVI(stack[0].ref = naviNode);
       stack[0].tNear = ray.tnear;
       stack[0].tFar = ray.tfar;
-      NAVI(stack[0].depth = 0);
       
       /*! offsets to select the side that becomes the lower or upper bound */
       const size_t nearX = ray.dir.x >= 0.0f ? 0*BVH4::UANode::stride : 1*BVH4::UANode::stride;
@@ -194,16 +186,10 @@ namespace embree
         BVH4::NodeRef cur = BVH4::NodeRef(stackPtr->ref);
         ssef tNear = stackPtr->tNear;
         ssef tFar = min(stackPtr->tFar,ray.tfar);
-        NAVI(size_t depth = stackPtr->depth);
         
         /*! if popped node is too far, pop next one */
-#if BVH4HAIR_WIDTH == 4
         if (unlikely(_mm_cvtss_f32(tNear) > _mm_cvtss_f32(tFar)))
           continue;
-#else
-        if (unlikely(tNear[0] > tFar[0]))
-          continue;
-#endif
 
         /* downtraversal loop */
         while (true)
@@ -220,23 +206,6 @@ namespace embree
           /*! otherwise this is a leaf */
           else break;
 
-#if BVH4HAIR_NAVIGATION
-          if (depth == naviDepth)
-          {
-            sseb valid = tNear <= tFar;
-            if (any(valid)) {
-              const int c = select_min(valid,tNear);
-              const BVH4::Node* node = cur.getNode();
-              ray.tfar = tNear[c];
-              ray.u = ray.v = 0.0f;
-              ray.Ng = Vec3fa(zero);
-              ray.geomID = 0;
-              ray.primID = 132*(int) node->child(c);
-            }
-            goto pop;
-          }
-#endif
-
           /*! if no child is hit, pop next node */
           STAT3(normal.trav_nodes,1,1,1);
           const BVH4::Node* node = cur.getNode();
@@ -249,7 +218,7 @@ namespace embree
           c0.prefetch();
 
           if (likely(mask == 0)) {
-            cur = c0;  tNear = tNear[r]; tFar = tFar[r]; NAVI(depth++);
+            cur = c0;  tNear = tNear[r]; tFar = tFar[r];
             assert(cur != BVH4::emptyNode);
             continue;
           }
@@ -263,13 +232,13 @@ namespace embree
           if (likely(mask == 0)) {
             assert(stackPtr < stackEnd); 
             if (n0 < n1) { 
-              stackPtr->ref = c1; stackPtr->tNear = n1; stackPtr->tFar = f1; NAVI(stackPtr->depth = depth+1); stackPtr++; 
-              cur = c0; tNear = n0; tFar = f0; NAVI(depth++);
+              stackPtr->ref = c1; stackPtr->tNear = n1; stackPtr->tFar = f1; stackPtr++; 
+              cur = c0; tNear = n0; tFar = f0;
               continue; 
             }
             else { 
-              stackPtr->ref = c0; stackPtr->tNear = n0; stackPtr->tFar = f0; NAVI(stackPtr->depth = depth+1); stackPtr++; 
-              cur = c1; tNear = n1; tFar = f1; NAVI(depth++);
+              stackPtr->ref = c0; stackPtr->tNear = n0; stackPtr->tFar = f0; stackPtr++; 
+              cur = c1; tNear = n1; tFar = f1; 
               continue; 
             }
           }
@@ -277,38 +246,28 @@ namespace embree
           /*! Here starts the slow path for 3 or 4 hit children. We push
            *  all nodes onto the stack to sort them there. */
           assert(stackPtr < stackEnd); 
-          stackPtr->ref = c0; stackPtr->tNear = n0; stackPtr->tFar = f0; NAVI(stackPtr->depth = depth+1); stackPtr++;
+          stackPtr->ref = c0; stackPtr->tNear = n0; stackPtr->tFar = f0; stackPtr++;
           assert(stackPtr < stackEnd); 
-          stackPtr->ref = c1; stackPtr->tNear = n1; stackPtr->tFar = f1; NAVI(stackPtr->depth = depth+1); stackPtr++;
+          stackPtr->ref = c1; stackPtr->tNear = n1; stackPtr->tFar = f1; stackPtr++;
           
           /*! three children are hit, push all onto stack and sort 3 stack items, continue with closest child */
           assert(stackPtr < stackEnd); 
           r = __bscf(mask);
-          BVH4::NodeRef c = node->child(r); c.prefetch(); float n2 = tNear[r]; float f2 = tFar[r]; stackPtr->ref = c; stackPtr->tNear = n2; stackPtr->tFar = f2; NAVI(stackPtr->depth = depth+1); stackPtr++;
+          BVH4::NodeRef c = node->child(r); c.prefetch(); float n2 = tNear[r]; float f2 = tFar[r]; stackPtr->ref = c; stackPtr->tNear = n2; stackPtr->tFar = f2; stackPtr++;
           //assert(c != BVH4::emptyNode); // FIXME: enable
           if (likely(mask == 0)) {
             sort(stackPtr[-1],stackPtr[-2],stackPtr[-3]);
-            cur = (BVH4::NodeRef) stackPtr[-1].ref; tNear = stackPtr[-1].tNear; tFar = stackPtr[-1].tFar; NAVI(depth = stackPtr[-1].depth); stackPtr--;
+            cur = (BVH4::NodeRef) stackPtr[-1].ref; tNear = stackPtr[-1].tNear; tFar = stackPtr[-1].tFar; stackPtr--;
             continue;
           }
 
-#if BVH4HAIR_WIDTH == 8
-
-          while (mask) {
-            r = __bscf(mask);
-            c = node->child(r); c.prefetch(); float n3 = tNear[r]; float f3 = tFar[r]; stackPtr->ref = c; stackPtr->tNear = n3; stackPtr->tFar = f3; NAVI(stackPtr->depth = depth+1); stackPtr++;
-          }
-          sort(stackPtr[-1],stackPtr[-2],stackPtr[-3],stackPtr[-4]);
-          cur = (BVH4::NodeRef) stackPtr[-1].ref; tNear = stackPtr[-1].tNear; tFar = stackPtr[-1].tFar; NAVI(depth = stackPtr[-1].depth); stackPtr--;
-#else
           /*! four children are hit, push all onto stack and sort 4 stack items, continue with closest child */
           assert(stackPtr < stackEnd); 
           r = __bscf(mask);
-          c = node->child(r); c.prefetch(); float n3 = tNear[r]; float f3 = tFar[r]; stackPtr->ref = c; stackPtr->tNear = n3; stackPtr->tFar = f3; NAVI(stackPtr->depth = depth+1); stackPtr++;
+          c = node->child(r); c.prefetch(); float n3 = tNear[r]; float f3 = tFar[r]; stackPtr->ref = c; stackPtr->tNear = n3; stackPtr->tFar = f3; stackPtr++;
           //assert(c != BVH4::emptyNode); // FIXME: enable
           sort(stackPtr[-1],stackPtr[-2],stackPtr[-3],stackPtr[-4]);
-          cur = (BVH4::NodeRef) stackPtr[-1].ref; tNear = stackPtr[-1].tNear; tFar = stackPtr[-1].tFar; NAVI(depth = stackPtr[-1].depth); stackPtr--;
-#endif
+          cur = (BVH4::NodeRef) stackPtr[-1].ref; tNear = stackPtr[-1].tNear; tFar = stackPtr[-1].tFar; stackPtr--;
         }
         
         /*! this is a leaf node */
@@ -358,13 +317,8 @@ namespace embree
         ssef tFar = min(stackPtr->tFar,ray.tfar);
         
         /*! if popped node is too far, pop next one */
-#if BVH4HAIR_WIDTH == 4
         if (unlikely(_mm_cvtss_f32(tNear) > _mm_cvtss_f32(tFar)))
           continue;
-#else
-        if (unlikely(tNear[0] > tFar[0]))
-          continue;
-#endif
 
         /* downtraversal loop */
         while (true)
@@ -427,14 +381,6 @@ namespace embree
             continue;
           }
 
-#if BVH4HAIR_WIDTH == 8
-          while (mask) {
-            r = __bscf(mask);
-            c = node->child(r); c.prefetch(); float n3 = tNear[r]; float f3 = tFar[r]; stackPtr->ref = c; stackPtr->tNear = n3; stackPtr->tFar = f3; stackPtr++;
-          }
-          sort(stackPtr[-1],stackPtr[-2],stackPtr[-3],stackPtr[-4]);
-          cur = (BVH4::NodeRef) stackPtr[-1].ref; tNear = stackPtr[-1].tNear; tFar = stackPtr[-1].tFar; stackPtr--;
-#else
           /*! four children are hit, push all onto stack and sort 4 stack items, continue with closest child */
           assert(stackPtr < stackEnd); 
           r = __bscf(mask);
@@ -442,7 +388,6 @@ namespace embree
           //assert(c != BVH4::emptyNode); // FIXME: enable
           sort(stackPtr[-1],stackPtr[-2],stackPtr[-3],stackPtr[-4]);
           cur = (BVH4::NodeRef) stackPtr[-1].ref; tNear = stackPtr[-1].tNear; tFar = stackPtr[-1].tFar; stackPtr--;
-#endif
         }
         
         /*! this is a leaf node */
@@ -881,8 +826,8 @@ namespace embree
 
 #if defined(__AVX__)
     typedef Select2Intersector1<Triangle4Intersector1MoellerTrumbore, Bezier1Intersector1> Triangle4Bezier1Intersector1;
-    //DEFINE_INTERSECTOR1(BVH4Triangle4Bezier1Intersector1,BVH4Intersector1Full<Triangle4Bezier1Intersector1>);
-    DEFINE_INTERSECTOR1(BVH4Triangle4Bezier1Intersector1,BVH4Intersector1Full<Bezier1Intersector1>);
+    DEFINE_INTERSECTOR1(BVH4Triangle4Bezier1Intersector1,BVH4Intersector1Full<Triangle4Bezier1Intersector1>);
+    //DEFINE_INTERSECTOR1(BVH4Triangle4Bezier1Intersector1,BVH4Intersector1Full<Bezier1Intersector1>);
 
     DEFINE_INTERSECTOR1(BVH4Bezier1Intersector1,BVH4Intersector1Full<Bezier1Intersector1>);
     DEFINE_INTERSECTOR1(BVH4Bezier1iIntersector1,BVH4Intersector1Full<Bezier1iIntersector1>);

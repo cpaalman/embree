@@ -22,7 +22,7 @@
 #include "common/scene.h"
 #include "geometry/primitive.h"
 
-#define NEW_ENCODING 0
+#define NEW_ENCODING 1
 
 namespace embree
 {
@@ -44,7 +44,11 @@ namespace embree
     static const size_t N = 4;
 
     /*! some pointer decoration masks */
+#if NEW_ENCODING
     static const size_t deco_mask    = 0xF00000000000000FLL;  //!< these bits are used to decorate the pointer
+#else
+    static const size_t deco_mask    = 0x000000000000000FLL;  //!< these bits are used
+#endif
     static const size_t barrier_mask = 0x0000000000000008LL;  //!< barrier bit to mark nodes during build
     static const size_t type_mask    = 0x0000000000000007LL;  //!< node and leaf type bits
     static const size_t alignment    = 0x0000000000000010LL;  //!< required pointer alignment
@@ -110,9 +114,13 @@ namespace embree
 #if NEW_ENCODING
 	prefetchL1(((char*)(ptr & ~deco_mask))+0*64);
 	prefetchL1(((char*)(ptr & ~deco_mask))+1*64);
+	prefetchL1(((char*)(ptr & ~deco_mask))+2*64);
+	prefetchL1(((char*)(ptr & ~deco_mask))+3*64);
 #else
 	prefetchL1(((char*)(ptr))+0*64);
 	prefetchL1(((char*)(ptr))+1*64);
+	prefetchL1(((char*)(ptr))+2*64);
+	prefetchL1(((char*)(ptr))+3*64);
 #endif
       }
 
