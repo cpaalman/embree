@@ -42,6 +42,14 @@ namespace embree
     __forceinline size_t size() const { 
       return num; 
     }
+
+    __forceinline float triSAH(float triCost) const { 
+      return halfArea(geomBounds)*triCost*blocks(numTriangles);
+    }
+
+    __forceinline float bezierSAH(float bezierCost) const { 
+      return halfArea(geomBounds)*bezierCost*numBeziers; 
+    }
     
     __forceinline float leafSAH(float triCost, float bezierCost) const { 
       return halfArea(geomBounds)*(triCost*blocks(numTriangles) + bezierCost*numBeziers); 

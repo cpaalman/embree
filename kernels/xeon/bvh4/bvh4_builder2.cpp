@@ -382,7 +382,7 @@ namespace embree
 #if 1
     BuildTask task(&bvh->root,1,tris,beziers,pinfo,split,geomBounds);
     recurseTask(threadIndex,task);
-    for (int i=0; i<5; i++) BVH4Rotate::rotate(bvh,*task.dst); 
+    //for (int i=0; i<5; i++) BVH4Rotate::rotate(bvh,*task.dst); 
 #else
     BuildTask task(&bvh->root,1,tris,beziers,pinfo,split,geomBounds);
     numActiveTasks = 1;
@@ -471,10 +471,11 @@ namespace embree
     float object_binning_aligned_sah = object_binning_aligned.split.splitSAH() + BVH4::travCostAligned*halfArea(pinfo.geomBounds);;
     bestSAH = min(bestSAH,object_binning_aligned_sah);
 
-    bool enableSpatialSplits = false;
-    //bool enableSpatialSplits = remainingSpatialSplits > 0;
-    SpatialSplit spatial_binning_aligned(tris,triCost);
-    float spatial_binning_aligned_sah = spatial_binning_aligned.split.splitSAH() + BVH4::travCostAligned*halfArea(pinfo.geomBounds);;
+    //bool enableSpatialSplits = false;
+    bool enableSpatialSplits = remainingSpatialSplits > 0;
+    //SpatialSplit spatial_binning_aligned(tris,triCost);
+    SpatialCenterSplit spatial_binning_aligned(tris,triCost);
+    float spatial_binning_aligned_sah = spatial_binning_aligned.split.splitSAH() + BVH4::travCostAligned*halfArea(pinfo.geomBounds);
     if (enableSpatialSplits) bestSAH = min(bestSAH,spatial_binning_aligned_sah);
     
     if (bestSAH == float(inf))
@@ -485,8 +486,9 @@ namespace embree
       new (&split) GeneralSplit(spatial_binning_aligned.split,true);
       atomic_add(&remainingSpatialSplits,-spatial_binning_aligned.split.numSpatialSplits);
     }
-    else
+    else {
       throw std::runtime_error("internal error");
+    }
   }
 
   BVH4::NodeRef BVH4Builder2::leaf(size_t threadIndex, size_t depth, TriRefList& prims, const PrimInfo& pinfo)
@@ -603,7 +605,7 @@ namespace embree
   void BVH4Builder2::processTrianglesAndBeziers(size_t threadIndex, BuildTask& task, BuildTask task_o[BVH4::N], size_t& N)
   {
     /*! compute leaf and split cost */
-    const float leafSAH  = task.pinfo.leafSAH (1.0f,BVH4::intCost);
+    const float leafSAH  = task.pinfo.leafSAH (bvh->primTy[0]->intCost,BVH4::intCost);
     const float splitSAH = task.split.splitSAH() + BVH4::travCostAligned*halfArea(task.nodeBounds.bounds);
 
     /*! create a leaf node when threshold reached or SAH tells us to stop */
@@ -680,8 +682,8 @@ namespace embree
   void BVH4Builder2::processTriangles(size_t threadIndex, BuildTask& task, BuildTask task_o[BVH4::N], size_t& N)
   {
     /*! compute leaf and split cost */
-    const float leafSAH  = task.pinfo.leafSAH (1.0f,BVH4::intCost);
-    const float splitSAH = task.split.splitSAH() + BVH4::travCostAligned*halfArea(task.nodeBounds.bounds);
+    const float leafSAH  = task.pinfo.triSAH (bvh->primTy[0]->intCost);
+    const float splitSAH = task.split.splitSAH() + BVH4::travCost*halfArea(task.nodeBounds.bounds);
 
     /*! create a leaf node when threshold reached or SAH tells us to stop */
     if (task.pinfo.size() <= minLeafSize || task.depth > BVH4::maxBuildDepth || (task.pinfo.size() <= maxLeafSize && leafSAH <= splitSAH)) {
@@ -702,7 +704,7 @@ namespace embree
       ssize_t bestChild = -1;
       for (size_t i=0; i<numChildren; i++) 
       {
-        float dSAH = csplit[i].splitSAH()-cpinfo[i].leafSAH(1.0f,BVH4::intCost);
+        float dSAH = csplit[i].splitSAH()-cpinfo[i].triSAH(bvh->primTy[0]->intCost);
         if (cpinfo[i].size() <= minLeafSize) continue; 
         if (cpinfo[i].size() > maxLeafSize) dSAH = min(0.0f,dSAH); //< force split for large jobs
         if (dSAH <= bestSAH) { bestChild = i; bestSAH = dSAH; }
@@ -724,9 +726,8 @@ namespace embree
     /*! create an aligned node */
     BVH4::UANode* node = bvh->allocUANode(threadIndex);
     for (size_t i=0; i<numChildren; i++) {
-      const BBox3fa bounds = computeAlignedBounds(ctris[i]); // FIXME: use pinfo
-      node->set(i,bounds);
-      new (&task_o[i]) BuildTask(&node->child(i),task.depth+1,ctris[i],cpinfo[i],csplit[i],bounds);
+      node->set(i,cpinfo[i].geomBounds);
+      new (&task_o[i]) BuildTask(&node->child(i),task.depth+1,ctris[i],cpinfo[i],csplit[i],cpinfo[i].geomBounds);
     }
     *task.dst = bvh->encodeNode(node);
     N = numChildren;

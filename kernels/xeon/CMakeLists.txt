@@ -123,6 +123,7 @@ IF (TARGET_AVX)
   bvh4/object_binner.cpp
   bvh4/object_binner_unaligned.cpp
   bvh4/spatial_split_binner.cpp
+  bvh4/spatial_center_split.cpp
   bvh4/object_type_partition.cpp
   bvh4/strand_split.cpp
 
